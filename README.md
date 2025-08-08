@@ -1,3 +1,12 @@
+<h1>Fork of LeRobot</h1>
+
+<p>Added: Keyboard per-joint teleoperation. `custom_brains/test.py` will perform this.</p>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+
 <p align="center">
   <img alt="LeRobot, Hugging Face Robotics Library" src="https://raw.githubusercontent.com/huggingface/lerobot/main/media/lerobot-logo-thumbnail.png" width="100%">
   <br/>
