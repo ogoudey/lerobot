@@ -1170,7 +1170,7 @@ class MotorsBus(abc.ABC):
             raise DeviceNotConnectedError(
                 f"{self.__class__.__name__}('{self.port}') is not connected. You need to run `{self.__class__.__name__}.connect()`."
             )
-
+        
         ids_values = self._get_ids_values_dict(values)
         models = [self._id_to_model(id_) for id_ in ids_values]
         if self._has_different_ctrl_tables:

@@ -198,6 +198,8 @@ class SO101Follower(Robot):
         Returns:
             the action sent to the motors, potentially clipped.
         """
+        logger.info(f"Action: {action}")
+        
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
@@ -211,6 +213,7 @@ class SO101Follower(Robot):
             goal_pos = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
 
         # Send goal position to the arm
+        logger.info(f"Goal position: {goal_pos}")   # = empty
         self.bus.sync_write("Goal_Position", goal_pos)
         return {f"{motor}.pos": val for motor, val in goal_pos.items()}
 

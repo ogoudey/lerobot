@@ -104,6 +104,9 @@ def teleop_loop(
 ):
     display_len = max(len(key) for key in robot.action_features)
     start = time.perf_counter()
+    
+    print("Teleop class:", type(teleop).__name__)
+    print("Beginning loop...")
     while True:
         loop_start = time.perf_counter()
         action = teleop.get_action()
@@ -145,7 +148,10 @@ def teleoperate(cfg: TeleoperateConfig):
     try:
         teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
     except KeyboardInterrupt:
-        pass
+        robot.bus.disable_torque()
+        robot.stop()
+    except NameError:
+        print("robot.bus.disable_torque()\nrobot.stop()\n\n...is not a thing.")
     finally:
         if cfg.display_data:
             rr.rerun_shutdown()

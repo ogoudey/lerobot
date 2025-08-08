@@ -39,8 +39,11 @@ import rerun as rr
 
 
 
+from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointTeleopConfig
+from pathlib import Path
+from lerobot.teleoperate import teleop_loop
 
-
+logger = logging.getLogger(__name__)
 
 def teleoperate(cfg: TeleoperateConfig):
     init_logging()
@@ -54,6 +57,8 @@ def teleoperate(cfg: TeleoperateConfig):
     teleop.connect()
     robot.connect()
 
+    logger.info(f"Motors: {robot.bus.motors}")
+
     try:
         teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
     except KeyboardInterrupt:
@@ -63,6 +68,7 @@ def teleoperate(cfg: TeleoperateConfig):
             rr.rerun_shutdown()
         teleop.disconnect()
         robot.disconnect()
+
 
 
 def main():
@@ -75,10 +81,11 @@ def main():
     follower.connect()
 
     teleop_config = TeleoperateConfig(
-        robot=robot_config,
-        teleop=TeleopConfig(
-            type="KeyboardTeleop",
-            key_mapping="wasd",  # example, replace with real values
+        robot = robot_config,
+        teleop = KeyboardJointTeleopConfig(
+            id="teleop1",
+            calibration_dir=Path("."),
+            mock=False,
         ),
         fps=30,
         teleop_time_s=60.0,

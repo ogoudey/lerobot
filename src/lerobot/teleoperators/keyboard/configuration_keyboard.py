@@ -30,3 +30,9 @@ class KeyboardTeleopConfig(TeleoperatorConfig):
 @dataclass
 class KeyboardEndEffectorTeleopConfig(KeyboardTeleopConfig):
     use_gripper: bool = True
+  
+@TeleoperatorConfig.register_subclass("keyboard_j")
+@dataclass
+class KeyboardJointTeleopConfig(KeyboardTeleopConfig):
+    use_gripper: bool = True  
+
