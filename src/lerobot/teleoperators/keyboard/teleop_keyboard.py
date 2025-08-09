@@ -91,8 +91,11 @@ class KeyboardTeleop(Teleoperator):
             self.listener = keyboard.Listener(
                 on_press=self._on_press,
                 on_release=self._on_release,
+                suppress=False
             )
             self.listener.start()
+            self.listener.wait()
+            print("Listener alive?", self.listener.is_alive())
         else:
             logging.info("pynput not available - skipping local keyboard listener.")
             self.listener = None
@@ -101,8 +104,15 @@ class KeyboardTeleop(Teleoperator):
         pass
 
     def _on_press(self, key):
-        if hasattr(key, "char"):
-            self.event_queue.put((key.char, True))
+        logging.info(f"on_press called: {key}")
+        try:
+            print(f"!!! on_press called: {key!r}")
+            if hasattr(key, "char") and key.char is not None:
+                self.event_queue.put((key.char, True))
+            else:
+                self.event_queue.put((str(key), True))
+        except Exception as e:
+            print("Error in on_press:", e)
 
     def _on_release(self, key):
         if hasattr(key, "char"):
@@ -132,7 +142,8 @@ class KeyboardTeleop(Teleoperator):
         
         # Generate action based on current key states
         action = {key for key, val in self.current_pressed.items() if val}
-        print("[DEBUG] Action:", list(action))
+        pressed = {key for key, val in self.current_pressed.items() if val}
+        #print("[DEBUG] Action:", list(action))
         self.logs["read_pos_dt_s"] = time.perf_counter() - before_read_t
 
         return dict.fromkeys(action, None)
@@ -148,11 +159,123 @@ class KeyboardTeleop(Teleoperator):
         if self.listener is not None:
             self.listener.stop()
 
+class KeyboardJointTeleop(KeyboardTeleop):
+    """
+    CustomTeleopClass
+    """
+
+    config_class = KeyboardJointTeleopConfig
+    name = "keyboard_j"
+    
+    
+    
+    def __init__(self, config: KeyboardJointTeleopConfig):
+        super().__init__(config)
+        self.config = config
+        self.misc_keys_queue = Queue()
+        
+        self.joint_targets = {
+            "shoulder_pan": 0.0,
+            "shoulder_lift": 0.0,
+            "elbow_flex": 0.0,
+            "wrist_flex": 0.0,
+            "wrist_roll": 0.0,
+            "gripper": 0.0,
+        }
+        
+        # Key mapping: key -> (joint_name, direction)
+        self.key_to_joint = {
+            "q": ("shoulder_pan", +1),
+            "a": ("shoulder_pan", -1),
+            "w": ("shoulder_lift", +1),
+            "s": ("shoulder_lift", -1),
+            "e": ("elbow_flex", +1),
+            "d": ("elbow_flex", -1),
+            "r": ("wrist_flex", +1),
+            "f": ("wrist_flex", -1),
+            "t": ("wrist_roll", +1),
+            "g": ("wrist_roll", -1),
+            "y": ("gripper", +1),
+            "h": ("gripper", -1),
+        }
+        
+        self.step = 1
+        
+    @property
+    def action_features(self):
+        raise NotImplementedError
+
+    def _on_press(self, key):
+        print(key, "pressed")
+        if hasattr(key, "char"):
+            key = key.char
+        self.event_queue.put((key, True))
+
+    def _on_release(self, key):
+        print(key, "released")
+        if hasattr(key, "char"):
+            key = key.char
+        self.event_queue.put((key, False))
+
+    def get_action(self) -> dict[str, Any]:
+        if not self.is_connected:
+            raise DeviceNotConnectedError(
+                "KeyboardTeleop is not connected. You need to run `connect()` before `get_action()`."
+            )
+
+        self._drain_pressed_keys()
+
+        # Generate action based on current key states
+        for key, pressed in self.current_pressed.items():
+            if pressed and key in self.key_to_joint:
+                print("Key", key, "pressed.")
+                joint, direction = self.key_to_joint[key]
+                self.joint_targets[joint] += direction * self.step
+            elif pressed:
+                self.misc_keys_queue.put(key)
+
+        self.current_pressed.clear()
+
+        action_dict = {f"{joint}.pos": pos for joint, pos in self.joint_targets.items()}
+        return action_dict
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
 class KeyboardEndEffectorTeleop(KeyboardTeleop):
-    """
-    Teleop class to use keyboard inputs for end effector control.
-    Designed to be used with the `So100FollowerEndEffector` robot.
-    """
+    
 
     config_class = KeyboardEndEffectorTeleopConfig
     name = "keyboard_ee"
@@ -237,78 +360,3 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
 
         return action_dict
 
-class KeyboardJointTeleop(KeyboardTeleop):
-    """
-    CustomTeleopClass
-    """
-
-    config_class = KeyboardJointTeleopConfig
-    name = "keyboard_j"
-    
-    
-    
-    def __init__(self, config: KeyboardJointTeleopConfig):
-        super().__init__(config)
-        self.config = config
-        self.misc_keys_queue = Queue()
-        
-        self.joint_targets = {
-            "shoulder_pan": 0.0,
-            "shoulder_lift": 0.0,
-            "elbow_flex": 0.0,
-            "wrist_flex": 0.0,
-            "wrist_roll": 0.0,
-            "gripper": 0.0,
-        }
-        
-        # Key mapping: key -> (joint_name, direction)
-        self.key_to_joint = {
-            "q": ("shoulder_pan", +1),
-            "a": ("shoulder_pan", -1),
-            "w": ("shoulder_lift", +1),
-            "s": ("shoulder_lift", -1),
-            "e": ("elbow_flex", +1),
-            "d": ("elbow_flex", -1),
-            "r": ("wrist_flex", +1),
-            "f": ("wrist_flex", -1),
-            "t": ("wrist_roll", +1),
-            "g": ("wrist_roll", -1),
-            "u": ("gripper", +1),
-            "j": ("gripper", -1),
-        }
-        
-    @property
-    def action_features(self):
-        raise NotImplementedError
-
-    def _on_press(self, key):
-        if hasattr(key, "char"):
-            key = key.char
-        self.event_queue.put((key, True))
-
-    def _on_release(self, key):
-        if hasattr(key, "char"):
-            key = key.char
-        self.event_queue.put((key, False))
-
-    def get_action(self) -> dict[str, Any]:
-        if not self.is_connected:
-            raise DeviceNotConnectedError(
-                "KeyboardTeleop is not connected. You need to run `connect()` before `get_action()`."
-            )
-
-        self._drain_pressed_keys()
-
-
-        # Generate action based on current key states
-        for key, val in self.current_pressed.items():
-            if pressed and key in self.key_to_joint:
-                joint, direction = self.key_to_joint[key]
-                self.joint_targets[joint] += direction * self.step
-            elif pressed:
-                self.misc_keys_queue.put(key)
-
-        self.current_pressed.clear()
-
-        action_dict = {f"{joint}.pos": pos for joint, pos in self.joint_targets.items()}
-        return action_dict

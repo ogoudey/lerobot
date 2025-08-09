@@ -62,6 +62,7 @@ def teleoperate(cfg: TeleoperateConfig):
     try:
         teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
     except KeyboardInterrupt:
+        print("Exiting!")
         pass
     finally:
         if cfg.display_data:
@@ -85,7 +86,7 @@ def main():
         teleop = KeyboardJointTeleopConfig(
             id="teleop1",
             calibration_dir=Path("."),
-            mock=False,
+            mock=True,
         ),
         fps=30,
         teleop_time_s=60.0,
