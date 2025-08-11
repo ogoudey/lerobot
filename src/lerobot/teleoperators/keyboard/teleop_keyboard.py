@@ -59,7 +59,34 @@ class KeyboardTeleop(Teleoperator):
         self.current_pressed = {}
         self.listener = None
         self.logs = {}
-
+        
+        self.urdf_path = os.path.abspath("custom_brains/so101_new_calib.urdf")
+        
+        max_joint_names = [
+            "shoulder_pan",
+            "shoulder_lift",
+            "elbow_flex",
+            "wrist_flex",
+            "wrist_roll",
+            "gripper",
+        ] # for reference
+        
+        self.joint_names = [
+            "shoulder_pan",
+            "shoulder_lift",
+            "elbow_flex",
+            "wrist_flex",
+            "wrist_roll",
+            "gripper",
+        ]
+        
+        print(f"Loading URDF from: {self.urdf_path} (is file? {os.path.isfile(self.urdf_path)})")
+        self.kinematics = RobotKinematics(self.urdf_path, 'gripper_frame_link', self.joint_names)
+        
+        # Checking order of joints so solver is aligned #
+        kinematics_joint_order = list(self.kinematics.robot.model.names)[2:]
+        assert kinematics_joint_order == self.joint_names
+        assert self.kinematics.joint_names == self.joint_names
     @property
     def action_features(self) -> dict:
         return {
@@ -271,7 +298,7 @@ class KeyboardJointTeleop(KeyboardTeleop):
         
         
         
-        
+from ...model.kinematics import RobotKinematics    
         
         
 class KeyboardEndEffectorTeleop(KeyboardTeleop):
@@ -284,6 +311,8 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
         super().__init__(config)
         self.config = config
         self.misc_keys_queue = Queue()
+        
+        
 
     @property
     def action_features(self) -> dict:
@@ -349,11 +378,15 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
 
         self.current_pressed.clear()
 
+        scale = 0.002 # Added
+
         action_dict = {
-            "delta_x": delta_x,
-            "delta_y": delta_y,
-            "delta_z": delta_z,
+            "delta_x": delta_x * scale,
+            "delta_y": delta_y * scale,
+            "delta_z": delta_z * scale,
         }
+        
+        
 
         if self.config.use_gripper:
             action_dict["gripper"] = gripper_action

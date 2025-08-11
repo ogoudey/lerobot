@@ -39,7 +39,7 @@ import rerun as rr
 
 
 
-from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointTeleopConfig
+from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointTeleopConfig, KeyboardEndEffectorTeleopConfig
 from pathlib import Path
 from lerobot.teleoperate import teleop_loop
 
@@ -83,7 +83,7 @@ def main():
 
     teleop_config = TeleoperateConfig(
         robot = robot_config,
-        teleop = KeyboardJointTeleopConfig(
+        teleop = KeyboardEndEffectorTeleopConfig(
             id="teleop1",
             calibration_dir=Path("."),
             mock=True,

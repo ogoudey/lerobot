@@ -58,6 +58,7 @@ from pprint import pformat
 
 import draccus
 import rerun as rr
+import numpy as np
 
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
 from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401
@@ -109,19 +110,43 @@ def teleop_loop(
     print("Beginning loop...")
     while True:
         loop_start = time.perf_counter()
+        
+        observation = robot.get_observation()
         action = teleop.get_action()
+        
         if display_data:
-            observation = robot.get_observation()
+            
             log_rerun_data(observation, action)
+        
+        present_pos = np.array([robot.present_pos[name] for name in teleop.joint_names])    # convert to np_array for kinematics
+        print("Present:", robot.present_pos, "\n(The values go into K functions in degrees))
+        ee_pos = teleop.kinematics.forward_kinematics(present_pos)
+        translation = ee_pos[:3, 3]
+        if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
+            """ Re-Calculate action """        
+            deltas = [action["delta_x"], action["delta_y"], action["delta_z"]]
+            translation += np.array(deltas)
+            ee_pos[:3, 3] = translation
 
+            np_pos = teleop.kinematics.inverse_kinematics(present_pos, ee_pos)
+            action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, np_pos)} # convert back to action dict
+        #print("Action:", action)
         robot.send_action(action)
         dt_s = time.perf_counter() - loop_start
         busy_wait(1 / fps - dt_s)
 
         loop_s = time.perf_counter() - loop_start
-
         print("\n" + "-" * (display_len + 10))
-        print(f"{'NAME':<{display_len}} | {'NORM':>7}")
+        print(f"{'NAME':<{display_len}} | {'VALUE':>7}")
+        print(f"{'old_x':<{display_len}} | {ee_pos[:3, 3][0]:>7.2f}")
+        print(f"{'old_y':<{display_len}} | {ee_pos[:3, 3][1]:>7.2f}")
+        print(f"{'old_z':<{display_len}} | {ee_pos[:3, 3][2]:>7.2f}")
+        print(f"{'dx':<{display_len}} | {deltas[0]:>7.2f}")
+        print(f"{'dy':<{display_len}} | {deltas[1]:>7.2f}")
+        print(f"{'dz':<{display_len}} | {deltas[2]:>7.2f}")
+        print(f"{'x':<{display_len}} | {translation[0]:>7.2f}")
+        print(f"{'y':<{display_len}} | {translation[1]:>7.2f}")
+        print(f"{'z':<{display_len}} | {translation[2]:>7.2f}")
         for motor, value in action.items():
             print(f"{motor:<{display_len}} | {value:>7.2f}")
         print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
