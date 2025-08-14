@@ -33,9 +33,11 @@ import logging
 import time
 from dataclasses import asdict, dataclass
 from pprint import pformat
+from distutils.util import strtobool
 
 import draccus
 import rerun as rr
+
 
 
 
@@ -57,7 +59,6 @@ def teleoperate(cfg: TeleoperateConfig):
     teleop.connect()
     robot.connect()
 
-    logger.info(f"Motors: {robot.bus.motors}")
 
     try:
         teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
@@ -69,13 +70,52 @@ def teleoperate(cfg: TeleoperateConfig):
             rr.rerun_shutdown()
         teleop.disconnect()
         robot.disconnect()
-
+"""
+def record_dataset():
+    # reset robot position
+    input("Environment set up?") # environment scenario updated
+    while True:
+        print("New episode starting...")
+        
+        done = False
+        while not done:
+            # get observation w timestep
+            # get robot state
+            # (optional) get action w timestep
+            
+            # check whether done (if implemented, otherwise ^C)
+            pass    
+        except KeyboardInterrupt:
+            if strtobool(input("Save episode?"))
+                # validate last step (?)
+                print("Saving episode.")
+                # Add episode
+            else:
+                print("Ignoring episode.")
+        
+         
+        
+        # reset robot position
+        input("Environment set up (^C to exit)?") # environment scenario updated
+        
+        
+        
+    except KeyboardInterrupt:
+        if strtobool(input("Save dataset?"))
+            print("Saving dataset.")
+            # Finish writing dataset
+        else:
+            print("Deleting dataset.")
+            # Remove temporary files
+"""    
+    
 
 
 def main():
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
         id="my_robot",
+        use_degrees=False,
     )
 
     follower = SO101Follower(robot_config)
@@ -86,10 +126,10 @@ def main():
         teleop = KeyboardEndEffectorTeleopConfig(
             id="teleop1",
             calibration_dir=Path("."),
-            mock=True,
+            mock=False,
         ),
         fps=30,
-        teleop_time_s=60.0,
+        teleop_time_s=180.0,
         display_data=False,
     )
     

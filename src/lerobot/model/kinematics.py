@@ -52,12 +52,13 @@ class RobotKinematics:
         # Initialize frame task for IK
         self.tip_frame = self.solver.add_frame_task(self.target_frame_name, np.eye(4))
 
-    def forward_kinematics(self, joint_pos_deg):
+    def forward_kinematics(self, joint_pos_deg, verbose=True):
         """
-        Compute forward kinematics for given joint configuration given the target frame name in the constructor.
+        Compute forward kinematics for given joint configuration.
 
         Args:
             joint_pos_deg: Joint positions in degrees (numpy array)
+            verbose: If True, print debug info
 
         Returns:
             4x4 transformation matrix of the end-effector pose
@@ -65,28 +66,49 @@ class RobotKinematics:
 
         # Convert degrees to radians
         joint_pos_rad = np.deg2rad(joint_pos_deg[: len(self.joint_names)])
+        if verbose:
+            print("Input joints (deg):", joint_pos_deg)
+            print("Converted joints (rad):", joint_pos_rad)
 
-        # Update joint positions in placo robot
+        # Update joint positions in Placo robot
         for i, joint_name in enumerate(self.joint_names):
             self.robot.set_joint(joint_name, joint_pos_rad[i])
+            if verbose:
+                print(f"Set joint {joint_name} to {joint_pos_rad[i]:.6f} rad")
 
         # Update kinematics
         self.robot.update_kinematics()
+        if verbose:
+            print("Kinematics updated")
 
-        # Get the transformation matrix
-        return self.robot.get_T_world_frame(self.target_frame_name)
+        # Optional: print intermediate joint transforms if available
+        if hasattr(self.robot, "get_joint_T_world"):
+            for joint_name in self.joint_names:
+                T = self.robot.get_joint_T_world(joint_name)
+                if verbose:
+                    pos = T[:3, 3]
+                    print(f"Joint {joint_name} world pos: {pos}")
+
+        # Get the transformation matrix of the target frame
+        T_ee = self.robot.get_T_world_frame(self.target_frame_name)
+        if verbose:
+            pos = T_ee[:3, 3]
+            print(f"End-effector pose:\n{T_ee}\nPosition: {pos}")
+
+        return T_ee
 
     def inverse_kinematics(
-        self, current_joint_pos, desired_ee_pose, position_weight=1.0, orientation_weight=0.01
+        self, current_joint_pos, desired_ee_pose, position_weight=1.0, orientation_weight=0.01, verbose=True
     ):
         """
-        Compute inverse kinematics using placo solver.
+        Compute inverse kinematics using Placo solver with detailed debug outputs.
 
         Args:
             current_joint_pos: Current joint positions in degrees (used as initial guess)
             desired_ee_pose: Target end-effector pose as a 4x4 transformation matrix
             position_weight: Weight for position constraint in IK
             orientation_weight: Weight for orientation constraint in IK, set to 0.0 to only constrain position
+            verbose: If True, print debug info
 
         Returns:
             Joint positions in degrees that achieve the desired end-effector pose
@@ -94,31 +116,54 @@ class RobotKinematics:
 
         # Convert current joint positions to radians for initial guess
         current_joint_rad = np.deg2rad(current_joint_pos[: len(self.joint_names)])
+        if verbose:
+            print("Current joints (deg):", current_joint_pos)
+            print("Current joints (rad):", current_joint_rad)
 
         # Set current joint positions as initial guess
         for i, joint_name in enumerate(self.joint_names):
             self.robot.set_joint(joint_name, current_joint_rad[i])
+            if verbose:
+                print(f"Initial guess joint {joint_name} set to {current_joint_rad[i]:.6f} rad")
 
         # Update the target pose for the frame task
+        if verbose:
+            print("Desired EE pose:\n", desired_ee_pose)
         self.tip_frame.T_world_frame = desired_ee_pose
 
-        # Configure the task based on position_only flag
+        # Configure the task
         self.tip_frame.configure(self.target_frame_name, "soft", position_weight, orientation_weight)
+        if verbose:
+            print(f"Task configured with position_weight={position_weight}, orientation_weight={orientation_weight}")
 
         # Solve IK
         self.solver.solve(True)
         self.robot.update_kinematics()
+        if verbose:
+            print("IK solver finished and kinematics updated")
 
         # Extract joint positions
         joint_pos_rad = []
         for joint_name in self.joint_names:
             joint = self.robot.get_joint(joint_name)
             joint_pos_rad.append(joint)
+            if verbose:
+                print(f"IK solution joint {joint_name}: {joint:.6f} rad")
 
         # Convert back to degrees
         joint_pos_deg = np.rad2deg(joint_pos_rad)
+        if verbose:
+            print("IK solution (deg):", joint_pos_deg)
 
-        # Preserve gripper position if present in current_joint_pos
+        # Quick FK check of IK result
+        if verbose:
+            T_ee_result = self.robot.get_T_world_frame(self.target_frame_name)
+            pos_result = T_ee_result[:3, 3]
+            print("FK from IK solution position:", pos_result)
+            pos_diff = pos_result - desired_ee_pose[:3, 3]
+            print("Position difference vs target:", pos_diff)
+
+        # Preserve gripper position if present
         if len(current_joint_pos) > len(self.joint_names):
             result = np.zeros_like(current_joint_pos)
             result[: len(self.joint_names)] = joint_pos_deg
@@ -126,3 +171,5 @@ class RobotKinematics:
             return result
         else:
             return joint_pos_deg
+
+

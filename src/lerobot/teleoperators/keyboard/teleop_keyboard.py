@@ -61,6 +61,7 @@ class KeyboardTeleop(Teleoperator):
         self.logs = {}
         
         self.urdf_path = os.path.abspath("custom_brains/so101_new_calib.urdf")
+        #self.urdf_path = os.path.abspath("custom_brains/so101_old_calib.urdf")
         
         max_joint_names = [
             "shoulder_pan",
@@ -87,6 +88,7 @@ class KeyboardTeleop(Teleoperator):
         kinematics_joint_order = list(self.kinematics.robot.model.names)[2:]
         assert kinematics_joint_order == self.joint_names
         assert self.kinematics.joint_names == self.joint_names
+        
     @property
     def action_features(self) -> dict:
         return {
@@ -131,15 +133,11 @@ class KeyboardTeleop(Teleoperator):
         pass
 
     def _on_press(self, key):
-        logging.info(f"on_press called: {key}")
-        try:
-            print(f"!!! on_press called: {key!r}")
-            if hasattr(key, "char") and key.char is not None:
-                self.event_queue.put((key.char, True))
-            else:
-                self.event_queue.put((str(key), True))
-        except Exception as e:
-            print("Error in on_press:", e)
+        if hasattr(key, "char") and key.char is not None:
+            self.event_queue.put((key.char, True))
+        else:
+            self.event_queue.put((str(key), True))
+
 
     def _on_release(self, key):
         if hasattr(key, "char"):
@@ -260,7 +258,7 @@ class KeyboardJointTeleop(KeyboardTeleop):
                 self.joint_targets[joint] += direction * self.step
             elif pressed:
                 self.misc_keys_queue.put(key)
-
+        
         self.current_pressed.clear()
 
         action_dict = {f"{joint}.pos": pos for joint, pos in self.joint_targets.items()}
@@ -312,6 +310,15 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
         self.config = config
         self.misc_keys_queue = Queue()
         
+        self.key_to_delta = {
+            "w": ("delta_x", +1),
+            "s": ("delta_x", -1),
+            "a": ("delta_y", -1),
+            "d": ("delta_y", +1),
+            "z": ("delta_z", -1),
+            "x": ("delta_z", +1),
+        }
+        
         
 
     @property
@@ -346,47 +353,22 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             )
 
         self._drain_pressed_keys()
-        delta_x = 0.0
-        delta_y = 0.0
-        delta_z = 0.0
+        
+        scale = 0.005
+        action_dict = {
+            "delta_x": 0,
+            "delta_y": 0,
+            "delta_z": 0,
+        }
         gripper_action = 1.0
 
         # Generate action based on current key states
         for key, val in self.current_pressed.items():
-            if key == keyboard.Key.up:
-                delta_y = -int(val)
-            elif key == keyboard.Key.down:
-                delta_y = int(val)
-            elif key == keyboard.Key.left:
-                delta_x = int(val)
-            elif key == keyboard.Key.right:
-                delta_x = -int(val)
-            elif key == keyboard.Key.shift:
-                delta_z = -int(val)
-            elif key == keyboard.Key.shift_r:
-                delta_z = int(val)
-            elif key == keyboard.Key.ctrl_r:
-                # Gripper actions are expected to be between 0 (close), 1 (stay), 2 (open)
-                gripper_action = int(val) + 1
-            elif key == keyboard.Key.ctrl_l:
-                gripper_action = int(val) - 1
-            elif val:
-                # If the key is pressed, add it to the misc_keys_queue
-                # this will record key presses that are not part of the delta_x, delta_y, delta_z
-                # this is useful for retrieving other events like interventions for RL, episode success, etc.
-                self.misc_keys_queue.put(key)
-
+            if val and key in self.key_to_delta:
+                axis, direction = self.key_to_delta[key]
+                action_dict[axis] = direction * scale
+                
         self.current_pressed.clear()
-
-        scale = 0.002 # Added
-
-        action_dict = {
-            "delta_x": delta_x * scale,
-            "delta_y": delta_y * scale,
-            "delta_z": delta_z * scale,
-        }
-        
-        
 
         if self.config.use_gripper:
             action_dict["gripper"] = gripper_action

@@ -100,6 +100,7 @@ class TeleoperateConfig:
     display_data: bool = False
 
 
+
 def teleop_loop(
     teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None
 ):
@@ -108,6 +109,17 @@ def teleop_loop(
     
     print("Teleop class:", type(teleop).__name__)
     print("Beginning loop...")
+    print("Testing kinematics...")
+    observation = robot.get_observation() #internally sets present_pos for below
+    initial_joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])
+    calculated_eef_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
+    print("First FK:", calculated_eef_pos[:3, 3])
+    new_joints = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_eef_pos, 10.0, 0.1)
+    calculated_eef_pos = teleop.kinematics.forward_kinematics(new_joints)
+    print("Second FK:", calculated_eef_pos[:3, 3])
+    new_joints = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_eef_pos, 10.0, 0.1)
+    
+    input("Enter...")
     while True:
         loop_start = time.perf_counter()
         
@@ -118,37 +130,67 @@ def teleop_loop(
             
             log_rerun_data(observation, action)
         
-        present_pos = np.array([robot.present_pos[name] for name in teleop.joint_names])    # convert to np_array for kinematics
-        print("Present:", robot.present_pos, "\n(The values go into K functions in degrees))
-        ee_pos = teleop.kinematics.forward_kinematics(present_pos)
-        translation = ee_pos[:3, 3]
-        if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
-            """ Re-Calculate action """        
-            deltas = [action["delta_x"], action["delta_y"], action["delta_z"]]
-            translation += np.array(deltas)
-            ee_pos[:3, 3] = translation
+        position_weight, orientation_weight = 1.0, 1.0
+        
+        initial_joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])    # convert to np_array for kinematics
 
-            np_pos = teleop.kinematics.inverse_kinematics(present_pos, ee_pos)
-            action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, np_pos)} # convert back to action dict
-        #print("Action:", action)
-        robot.send_action(action)
+        """
+        if 
+        ee_pos = teleop.kinematics.forward_kinematics(present_joints_deg)
+        calculated_joints_deg = teleop.kinematics.inverse_kinematics(present_joints_deg, ee_pos, position_weight, orientation_weight)
+        print(f"{'NAME':<{display_len}} | {'REAL':>7} | {'IK':>7} | {'ERR':>7}")
+        print("-" * (display_len + 26))
+        for name, real_val, ik_val in zip(teleop.joint_names, present_joints_deg, calculated_joints_deg):
+            err = ik_val - real_val
+            print(f"{name:<{display_len}} | {real_val:7.2f} | {ik_val:7.2f} | {err:7.2f}")
+        initial_joints_deg = calculated_joints_deg
+        """
+        kinematics_joint_order = list(teleop.kinematics.robot.model.names)[2:]
+        assert kinematics_joint_order == teleop.joint_names
+
+        if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
+            """ Re-Calculate action """
+            
+            calculated_eef_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
+            print("FK pose:", calculated_eef_pos[:3, 3])
+            R = calculated_eef_pos[:3, :3]  # rotation matrix of EE in base frame
+            translation = calculated_eef_pos[:3, 3]
+            deltas = [action["delta_x"], action["delta_y"], action["delta_z"]]
+            delta_base = R @ np.array(deltas)  # transform delta to base frame
+            
+            translation += delta_base
+            calculated_eef_pos[:3, 3] = translation
+            #calculated_eef_pos[:3, 3] = [0.1, 0, 0.1] # overriding
+            calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_eef_pos, position_weight, orientation_weight)
+
+            print("Delta applied:", deltas)
+            print("New target FK pos:", calculated_eef_pos[:3, 3])
+            post_kf_pos = teleop.kinematics.forward_kinematics(calculated_new_joints_deg)
+            print("Actual new FK pos:", post_kf_pos[:3, 3])
+            
+            print(f"{'NAME':<{display_len}} | {'NEW':>7} | {'INITIAL':>7} | {'DIFF':>7}")
+
+            for name, new_val, present_val in zip(teleop.joint_names, calculated_new_joints_deg, initial_joints_deg):
+                diff_rl = new_val - present_val
+                
+                print(f"{name:<{display_len}} | {new_val:>7.2f} | {present_val:>7.2f} | {diff_rl:>7.2f}")
+            
+            action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
+            
+        else:
+            calculated_joints_deg = teleop.kinematics.inverse_kinematics(present_joints_deg, ee_pos, position_weight, orientation_weight)
+            calculated_action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_joints_deg)} # convert back to action dict
+        
+        robot.send_action(action) # comment for mock?
         dt_s = time.perf_counter() - loop_start
         busy_wait(1 / fps - dt_s)
 
         loop_s = time.perf_counter() - loop_start
         print("\n" + "-" * (display_len + 10))
-        print(f"{'NAME':<{display_len}} | {'VALUE':>7}")
-        print(f"{'old_x':<{display_len}} | {ee_pos[:3, 3][0]:>7.2f}")
-        print(f"{'old_y':<{display_len}} | {ee_pos[:3, 3][1]:>7.2f}")
-        print(f"{'old_z':<{display_len}} | {ee_pos[:3, 3][2]:>7.2f}")
-        print(f"{'dx':<{display_len}} | {deltas[0]:>7.2f}")
-        print(f"{'dy':<{display_len}} | {deltas[1]:>7.2f}")
-        print(f"{'dz':<{display_len}} | {deltas[2]:>7.2f}")
-        print(f"{'x':<{display_len}} | {translation[0]:>7.2f}")
-        print(f"{'y':<{display_len}} | {translation[1]:>7.2f}")
-        print(f"{'z':<{display_len}} | {translation[2]:>7.2f}")
+
         for motor, value in action.items():
             print(f"{motor:<{display_len}} | {value:>7.2f}")
+  
         print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
 
         if duration is not None and time.perf_counter() - start >= duration:
