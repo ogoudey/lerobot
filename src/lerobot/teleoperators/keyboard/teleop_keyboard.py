@@ -311,12 +311,33 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
         self.misc_keys_queue = Queue()
         
         self.key_to_delta = {
-            "w": ("delta_x", +1),
-            "s": ("delta_x", -1),
-            "a": ("delta_y", -1),
-            "d": ("delta_y", +1),
-            "z": ("delta_z", -1),
-            "x": ("delta_z", +1),
+            "i": ("x", -1),
+            "k": ("x", +1),
+            "j": ("y", +1),
+            "l": ("y", -1),
+            "u": ("z", +1),
+            "o": ("z", -1),
+        }
+        
+        self.key_to_orient = {
+            "w": ("pitch", -1),
+            "s": ("pitch", +1),
+            "q": ("roll", -1),
+            "e": ("roll", +1),
+        }
+        
+        self.key_gripper = {
+            "z": ("gripper", +1),
+            "x": ("gripper", -1),
+        }
+        
+        self.target_pos = {
+            "x": 0.2,
+            "y": 0,
+            "z": 0.2,
+            "roll": 0.0,
+            "pitch": 90.0,
+            "gripper": 0.0,
         }
         
         
@@ -354,24 +375,28 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
 
         self._drain_pressed_keys()
         
-        scale = 0.005
-        action_dict = {
-            "delta_x": 0,
-            "delta_y": 0,
-            "delta_z": 0,
-        }
-        gripper_action = 1.0
+        factor = 0.002
+        roll_pitch_factor = 1
+        gripper_factor = 1
 
         # Generate action based on current key states
         for key, val in self.current_pressed.items():
             if val and key in self.key_to_delta:
                 axis, direction = self.key_to_delta[key]
-                action_dict[axis] = direction * scale
+                self.target_pos[axis] += direction * factor
+                
+                # e.g. self.target_pos["roll"] += 1 * 0.005
+            if val and key in self.key_to_orient:
+                axis, direction = self.key_to_orient[key]
+                self.target_pos[axis] += direction * roll_pitch_factor    
+            if val and key in self.key_gripper:
+                gripper, direction = self.key_gripper[key]
+                adjust = direction * gripper_factor
+                if self.target_pos[gripper] >= 0 and adjust > 0:
+                    self.target_pos[gripper] += adjust
+                
                 
         self.current_pressed.clear()
 
-        if self.config.use_gripper:
-            action_dict["gripper"] = gripper_action
-
-        return action_dict
+        return self.target_pos
 

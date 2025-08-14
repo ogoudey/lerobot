@@ -42,8 +42,12 @@ class RobotKinematics:
         
         self.robot = placo.RobotWrapper(urdf_path)
         self.solver = placo.KinematicsSolver(self.robot)
+        
+        
+        
         self.solver.mask_fbase(True)  # Fix the base
-
+        #self.solver.enable_velocity_limits(True) # Added by Olin
+        #self.solver.dt = 0.01 # "
         self.target_frame_name = target_frame_name
 
         # Set joint names
@@ -52,7 +56,8 @@ class RobotKinematics:
         # Initialize frame task for IK
         self.tip_frame = self.solver.add_frame_task(self.target_frame_name, np.eye(4))
 
-    def forward_kinematics(self, joint_pos_deg, verbose=True):
+
+    def forward_kinematics(self, joint_pos_deg, verbose=False):
         """
         Compute forward kinematics for given joint configuration.
 
@@ -98,7 +103,7 @@ class RobotKinematics:
         return T_ee
 
     def inverse_kinematics(
-        self, current_joint_pos, desired_ee_pose, position_weight=1.0, orientation_weight=0.01, verbose=True
+        self, current_joint_pos, desired_ee_pose, position_weight=1.0, orientation_weight=0.01, verbose=False
     ):
         """
         Compute inverse kinematics using Placo solver with detailed debug outputs.
@@ -137,8 +142,9 @@ class RobotKinematics:
             print(f"Task configured with position_weight={position_weight}, orientation_weight={orientation_weight}")
 
         # Solve IK
-        self.solver.solve(True)
+        
         self.robot.update_kinematics()
+        self.solver.solve(True)
         if verbose:
             print("IK solver finished and kinematics updated")
 
@@ -162,6 +168,9 @@ class RobotKinematics:
             print("FK from IK solution position:", pos_result)
             pos_diff = pos_result - desired_ee_pose[:3, 3]
             print("Position difference vs target:", pos_diff)
+
+        if verbose:
+            self.solver.dump_status()
 
         # Preserve gripper position if present
         if len(current_joint_pos) > len(self.joint_names):

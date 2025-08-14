@@ -99,7 +99,17 @@ class TeleoperateConfig:
     # Display all cameras on screen
     display_data: bool = False
 
+def rot_y(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[ c, 0, s],
+                     [ 0, 1, 0],
+                     [-s, 0, c]])
 
+def rot_z(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[c,-s, 0],
+                     [s, c, 0],
+                     [0, 0, 1]])
 
 def teleop_loop(
     teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None
@@ -109,77 +119,59 @@ def teleop_loop(
     
     print("Teleop class:", type(teleop).__name__)
     print("Beginning loop...")
-    print("Testing kinematics...")
-    observation = robot.get_observation() #internally sets present_pos for below
-    initial_joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])
-    calculated_eef_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
-    print("First FK:", calculated_eef_pos[:3, 3])
-    new_joints = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_eef_pos, 10.0, 0.1)
-    calculated_eef_pos = teleop.kinematics.forward_kinematics(new_joints)
-    print("Second FK:", calculated_eef_pos[:3, 3])
-    new_joints = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_eef_pos, 10.0, 0.1)
+    position_weight, orientation_weight = 1.0, 0.1
+    """ Calculate FK once for initial position """
+    observation = robot.get_observation() # set robot.present_pos
+    initial_joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])    # convert to np_array for kinematics
+    calculated_ee_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
     
-    input("Enter...")
+    init_fk = calculated_ee_pos[:3, 3]
+    if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
+        teleop.target_pos["x"] =  init_fk[0]
+        teleop.target_pos["y"] =  init_fk[1]    # overriding
+        teleop.target_pos["z"] =  init_fk[2]
+    
+    #print(calculated_ee_pos[:3, :3])
+    # set target_rotation
+    input("[hit Enter]")
     while True:
         loop_start = time.perf_counter()
-        
         observation = robot.get_observation()
         action = teleop.get_action()
-        
         if display_data:
-            
             log_rerun_data(observation, action)
-        
-        position_weight, orientation_weight = 1.0, 1.0
-        
-        initial_joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])    # convert to np_array for kinematics
-
-        """
-        if 
-        ee_pos = teleop.kinematics.forward_kinematics(present_joints_deg)
-        calculated_joints_deg = teleop.kinematics.inverse_kinematics(present_joints_deg, ee_pos, position_weight, orientation_weight)
-        print(f"{'NAME':<{display_len}} | {'REAL':>7} | {'IK':>7} | {'ERR':>7}")
-        print("-" * (display_len + 26))
-        for name, real_val, ik_val in zip(teleop.joint_names, present_joints_deg, calculated_joints_deg):
-            err = ik_val - real_val
-            print(f"{name:<{display_len}} | {real_val:7.2f} | {ik_val:7.2f} | {err:7.2f}")
-        initial_joints_deg = calculated_joints_deg
-        """
+        # Kinematics check
         kinematics_joint_order = list(teleop.kinematics.robot.model.names)[2:]
         assert kinematics_joint_order == teleop.joint_names
-
+        
+        
+        joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])    # convert to np_array for kinematics
+        ee_pos = teleop.kinematics.forward_kinematics(joints_deg)
+        
+        #print("___________\n",ee_pos[:3, :3],"___________\n")
+        
         if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
             """ Re-Calculate action """
-            
-            calculated_eef_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
-            print("FK pose:", calculated_eef_pos[:3, 3])
-            R = calculated_eef_pos[:3, :3]  # rotation matrix of EE in base frame
-            translation = calculated_eef_pos[:3, 3]
-            deltas = [action["delta_x"], action["delta_y"], action["delta_z"]]
-            delta_base = R @ np.array(deltas)  # transform delta to base frame
-            
-            translation += delta_base
-            calculated_eef_pos[:3, 3] = translation
-            #calculated_eef_pos[:3, 3] = [0.1, 0, 0.1] # overriding
-            calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_eef_pos, position_weight, orientation_weight)
+            target_ee_pos = np.array([action["x"], action["y"], action["z"]])
+            print(target_ee_pos, "\n")
+            calculated_ee_pos[:3, 3] = target_ee_pos
+            # Now affect R
+            if True:
+                target_pitch = np.deg2rad(action["pitch"])   # in degrees
+                target_roll = np.deg2rad(action["roll"])
+                # ...
+                print({"pitch":round(float(action["pitch"]),4), "roll": round(float(action["roll"]),4)})
+                R_new = rot_y(target_pitch) @ rot_z(target_roll)
 
-            print("Delta applied:", deltas)
-            print("New target FK pos:", calculated_eef_pos[:3, 3])
-            post_kf_pos = teleop.kinematics.forward_kinematics(calculated_new_joints_deg)
-            print("Actual new FK pos:", post_kf_pos[:3, 3])
+                calculated_ee_pos[:3, :3] = R_new
             
-            print(f"{'NAME':<{display_len}} | {'NEW':>7} | {'INITIAL':>7} | {'DIFF':>7}")
-
-            for name, new_val, present_val in zip(teleop.joint_names, calculated_new_joints_deg, initial_joints_deg):
-                diff_rl = new_val - present_val
-                
-                print(f"{name:<{display_len}} | {new_val:>7.2f} | {present_val:>7.2f} | {diff_rl:>7.2f}")
             
+            calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_ee_pos, position_weight, orientation_weight)
+            target_gripper = action["gripper"]
             action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
-            
-        else:
-            calculated_joints_deg = teleop.kinematics.inverse_kinematics(present_joints_deg, ee_pos, position_weight, orientation_weight)
-            calculated_action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_joints_deg)} # convert back to action dict
+            action["gripper.pos"] = target_gripper
+        
+        
         
         robot.send_action(action) # comment for mock?
         dt_s = time.perf_counter() - loop_start
