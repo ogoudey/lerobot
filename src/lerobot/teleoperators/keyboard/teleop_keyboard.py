@@ -88,6 +88,7 @@ class KeyboardTeleop(Teleoperator):
         kinematics_joint_order = list(self.kinematics.robot.model.names)[2:]
         assert kinematics_joint_order == self.joint_names
         assert self.kinematics.joint_names == self.joint_names
+    
         
     @property
     def action_features(self) -> dict:
@@ -183,6 +184,8 @@ class KeyboardTeleop(Teleoperator):
             )
         if self.listener is not None:
             self.listener.stop()
+
+
 
 class KeyboardJointTeleop(KeyboardTeleop):
     """

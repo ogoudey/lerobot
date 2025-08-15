@@ -55,6 +55,8 @@ class RobotKinematics:
 
         # Initialize frame task for IK
         self.tip_frame = self.solver.add_frame_task(self.target_frame_name, np.eye(4))
+        
+        self.robot.update_kinematics()
 
 
     def forward_kinematics(self, joint_pos_deg, verbose=False):

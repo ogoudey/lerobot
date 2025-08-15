@@ -236,3 +236,16 @@ class SO101Follower(Robot):
             cam.disconnect()
 
         logger.info(f"{self} disconnected.")
+        
+    def reset_position(self,
+        position={
+            "shoulder_pan.pos": 0.0,
+            "shoulder_lift.pos": 0.0,
+            "elbow_flex.pos": 0.0,
+            "wrist_flex.pos": 0.0,
+            "wrist_roll.pos": 0.0,
+            "gripper.pos": 0.0,
+        }
+    ):
+        self.send_action(position)
+        

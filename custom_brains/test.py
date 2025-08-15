@@ -70,36 +70,48 @@ def teleoperate(cfg: TeleoperateConfig):
             rr.rerun_shutdown()
         teleop.disconnect()
         robot.disconnect()
-"""
+
 def record_dataset():
-    # reset robot position
-    input("Environment set up?") # environment scenario updated
-    while True:
-        print("New episode starting...")
-        
-        done = False
-        while not done:
-            # get observation w timestep
-            # get robot state
-            # (optional) get action w timestep
+    t_cfg = teleop_config()
+    
+    init_logging()
+    logging.info(pformat(asdict(cfg)))
+    if cfg.display_data:
+        _init_rerun(session_name="teleoperation")
+
+    teleop = make_teleoperator_from_config(t_cfg.teleop)
+    robot = make_robot_from_config(t_cfg.robot)
+
+    teleop.connect()
+    robot.connect()
+    
+    #
+    # connect to IPwebcam
+    #
+    
+    try:
+        robot.reset_position()
+        input("Environment set up?") # environment scenario updated manually
+        while True:
+            print("New episode starting...")
+            episode_data = {}
+            done = False
+            try:
+                teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s, video_stream=None, episode_data=episode_data) # send IPwebcam to teleop loop
             
-            # check whether done (if implemented, otherwise ^C)
-            pass    
-        except KeyboardInterrupt:
-            if strtobool(input("Save episode?"))
-                # validate last step (?)
-                print("Saving episode.")
-                # Add episode
-            else:
-                print("Ignoring episode.")
-        
-         
-        
-        # reset robot position
-        input("Environment set up (^C to exit)?") # environment scenario updated
-        
-        
-        
+      
+            except KeyboardInterrupt:
+                print("Ending episode.")
+                if strtobool(input("Save episode?"))
+                    # validate last step (?)
+                    print("Saving episode...")
+                    # Form Lerobot episode from episode_data
+                    
+                    print("Episode saved.")
+                else:
+                    print("Ignoring episode.")
+            robot.reset_position() # use default start position
+            input("Environment set up? (^C to exit)") # environment scenario updated manually
     except KeyboardInterrupt:
         if strtobool(input("Save dataset?"))
             print("Saving dataset.")
@@ -107,11 +119,8 @@ def record_dataset():
         else:
             print("Deleting dataset.")
             # Remove temporary files
-"""    
-    
-
-
-def main():
+  
+def teleop_config():
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
         id="my_robot",
@@ -132,8 +141,13 @@ def main():
         teleop_time_s=180.0,
         display_data=False,
     )
+    return teleop_config 
+
+
+def main():
     
-    teleoperate(teleop_config)
+    
+    teleoperate(teleop_config())
 
 
 if __name__ == "__main__":
