@@ -75,8 +75,8 @@ def record_dataset():
     t_cfg = teleop_config()
     
     init_logging()
-    logging.info(pformat(asdict(cfg)))
-    if cfg.display_data:
+    logging.info(pformat(asdict(t_cfg)))
+    if t_cfg.display_data:
         _init_rerun(session_name="teleoperation")
 
     teleop = make_teleoperator_from_config(t_cfg.teleop)
@@ -97,12 +97,12 @@ def record_dataset():
             episode_data = {}
             done = False
             try:
-                teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s, video_stream=None, episode_data=episode_data) # send IPwebcam to teleop loop
+                teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_stream=None, episode_data=episode_data) # send IPwebcam to teleop loop
             
       
             except KeyboardInterrupt:
                 print("Ending episode.")
-                if strtobool(input("Save episode?"))
+                if strtobool(input("Save episode?")):
                     # validate last step (?)
                     print("Saving episode...")
                     # Form Lerobot episode from episode_data
@@ -113,12 +113,25 @@ def record_dataset():
             robot.reset_position() # use default start position
             input("Environment set up? (^C to exit)") # environment scenario updated manually
     except KeyboardInterrupt:
-        if strtobool(input("Save dataset?"))
-            print("Saving dataset.")
-            # Finish writing dataset
-        else:
-            print("Deleting dataset.")
+        try:
+            if strtobool(input("Save dataset?")):
+                print("Saving dataset.")
+                # Finish writing dataset
+            else:
+                print("Deleting dataset.")
+                # Remove temporary files
+        except KeyboardInterrupt:
+            print("Deleting dataset and exiting (catch me!!).")
             # Remove temporary files
+            
+            # Safely quit
+            robot.bus.disable_torque()
+            robot.stop()
+            if t_cfg.display_data:
+                rr.rerun_shutdown()
+            teleop.disconnect()
+            robot.disconnect()
+
   
 def teleop_config():
     robot_config = SO101FollowerConfig(
@@ -147,7 +160,7 @@ def teleop_config():
 def main():
     
     
-    teleoperate(teleop_config())
+    record_dataset()
 
 
 if __name__ == "__main__":

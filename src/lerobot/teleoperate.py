@@ -112,7 +112,7 @@ def rot_z(a):
                      [0, 0, 1]])
 
 def teleop_loop(
-    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_stream = None, episode_data={}
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_stream = None, episode_data={}, verbose=False
 ):
     display_len = max(len(key) for key in robot.action_features)
     start = time.perf_counter()
@@ -153,14 +153,11 @@ def teleop_loop(
         if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
             """ Re-Calculate action """
             target_ee_pos = np.array([action["x"], action["y"], action["z"]])
-            print(target_ee_pos, "\n")
             calculated_ee_pos[:3, 3] = target_ee_pos
             # Now affect R
             if True:
                 target_pitch = np.deg2rad(action["pitch"])   # in degrees
                 target_roll = np.deg2rad(action["roll"])
-                # ...
-                print({"pitch":round(float(action["pitch"]),4), "roll": round(float(action["roll"]),4)})
                 R_new = rot_y(target_pitch) @ rot_z(target_roll)
 
                 calculated_ee_pos[:3, :3] = R_new
@@ -174,12 +171,13 @@ def teleop_loop(
         busy_wait(1 / fps - dt_s)
 
         loop_s = time.perf_counter() - loop_start
-        print("\n" + "-" * (display_len + 10))
+        if verbose:
+            print("\n" + "-" * (display_len + 10))
 
-        for motor, value in action.items():
-            print(f"{motor:<{display_len}} | {value:>7.2f}")
-  
-        print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
+            for motor, value in action.items():
+                print(f"{motor:<{display_len}} | {value:>7.2f}")
+
+            print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
 
         if duration is not None and time.perf_counter() - start >= duration:
             return
