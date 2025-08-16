@@ -38,7 +38,7 @@ from distutils.util import strtobool
 import draccus
 import rerun as rr
 
-
+import cv2
 
 
 from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointTeleopConfig, KeyboardEndEffectorTeleopConfig
@@ -84,13 +84,17 @@ def record_dataset():
 
     teleop = make_teleoperator_from_config(t_cfg.teleop)
     robot = make_robot_from_config(t_cfg.robot)
+    webcam_url = "https://192.168.0.159:8080/shot.jpg"
+    webcam_image_shape = probe_shape(webcam_url)
+    laptop_image_shape = probe_shape(0)
     robot.observation_features = {
         **robot._motors_ft,
         # Inject your own cameras with fixed sizes
         "observation/images/front": (480, 640, 3),
-        "observation/images/side": (480, 640, 3),
+        "observation/images/side": webcam_image_shape,
     }   # overriding property of so101
-
+    
+    
 
     action_features = hw_to_dataset_features(robot.action_features, "action", use_videos=True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_videos=True)
@@ -123,7 +127,7 @@ def record_dataset():
             while True:
                 print("New episode starting...")
                 try:
-                    teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_stream=None, dataset=dataset) # send IPwebcam to teleop loop 
+                    teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_stream=webcam_url, dataset=dataset) # send IPwebcam to teleop loop 
           
                 except KeyboardInterrupt:
                     print("Ending episode.")
@@ -137,27 +141,41 @@ def record_dataset():
                         print("Ignoring episode.")
                 robot.reset_position() # use default start position
                 input("Environment set up? (^C to exit)") # environment scenario updated manually
+    except KeyboardInterrupt:
+        try:
+            if strtobool(input("Save dataset?")):
+                print("Saving dataset.")
+                dataset.save_episode()
+                # Finish writing dataset
+            else:
+                print("Deleting dataset.")
+                dataset.clear_episode_buffer()
         except KeyboardInterrupt:
-            try:
-                if strtobool(input("Save dataset?")):
-                    print("Saving dataset.")
-                    dataset.save_episode()
-                    # Finish writing dataset
-                else:
-                    print("Deleting dataset.")
-                    dataset.clear_episode_buffer()
-            except KeyboardInterrupt:
-                print("Deleting dataset and exiting (catch me!!).")
-                # Remove temporary files
-                
-                # Safely quit
-                robot.bus.disable_torque()
-                robot.stop()
-                if t_cfg.display_data:
-                    rr.rerun_shutdown()
-                teleop.disconnect()
-                robot.disconnect()
+            print("Deleting dataset and exiting (catch me!!).")
+            # Remove temporary files
+            
+            # Safely quit
+            robot.bus.disable_torque()
+            robot.stop()
+            if t_cfg.display_data:
+                rr.rerun_shutdown()
+            teleop.disconnect()
+            robot.disconnect()
 
+def probe_shape(url):
+    cap = cv2.VideoCapture(ip_url)
+
+    if not cap.isOpened():
+        raise RuntimeError("Cannot open IP webcam stream")
+
+    ret, frame = cap.read()
+    if not ret:
+        raise RuntimeError("Failed to grab frame")
+
+    print("Frame shape:", frame.shape)  # (height, width, channels)
+
+    cap.release()
+    return frame.shape
   
 def teleop_config():
     robot_config = SO101FollowerConfig(
@@ -183,9 +201,30 @@ def teleop_config():
     return teleop_config 
 
 
+def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
+    import matplotlib.pyplot as plt
+    cap = cv2.VideoCapture(url)
+    if not cap.isOpened():
+        print("Failed to open IP webcam")
+        return
+    
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        print("Failed to grab frame")
+        return
+
+    # Convert BGR → RGB if you like, for display or saving
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    plt.imshow(frame_rgb)
+    plt.axis("off")
+    plt.show()
+    input(".")
+
 def main():
     
-    
+    test_webcam(0)
     record_dataset()
 
 
