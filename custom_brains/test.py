@@ -43,8 +43,11 @@ import cv2
 
 from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointTeleopConfig, KeyboardEndEffectorTeleopConfig
 from pathlib import Path
+import shutil
+import os
 from lerobot.teleoperate import teleop_loop
 
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.datasets.video_utils import VideoEncodingManager
 
@@ -76,6 +79,8 @@ def teleoperate(cfg: TeleoperateConfig):
 
 def record_dataset():
     t_cfg = teleop_config()
+
+    
     
     init_logging()
     logging.info(pformat(asdict(t_cfg)))
@@ -84,87 +89,103 @@ def record_dataset():
 
     teleop = make_teleoperator_from_config(t_cfg.teleop)
     robot = make_robot_from_config(t_cfg.robot)
-    webcam_url = "https://192.168.0.159:8080/shot.jpg"
-    webcam_image_shape = probe_shape(webcam_url)
-    laptop_image_shape = probe_shape(0)
+    input("Start cameras... [hit Enter to continue]")
+    webcam1_url = "https://192.168.0.159:8080/shot.jpg"
+    webcam2_url = "https://192.168.0.151:8080/shot.jpg"
+    urls = [webcam1_url, webcam2_url]
+    try:
+        webcam1_image_shape = probe_shape(webcam1_url)
+        webcam2_image_shape = probe_shape(webcam2_url)
+        #laptop_image_shape = probe_shape(0)
+    except RuntimeError as e:
+        print(e, "\nResuming...")
+        raise RuntimeError
+        webcam1_image_shape, webcam2_image_shape = (0), (0)
     robot.observation_features = {
         **robot._motors_ft,
-        # Inject your own cameras with fixed sizes
-        "observation/images/front": (480, 640, 3),
-        "observation/images/side": webcam_image_shape,
+        "side": webcam1_image_shape,
+        "front": webcam2_image_shape,
+        #"observation/images/front": laptop_image_shape,
     }   # overriding property of so101
     
     
 
-    action_features = hw_to_dataset_features(robot.action_features, "action", use_videos=True)
-    obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_videos=True)
+    action_features = hw_to_dataset_features(robot.action_features, "action", use_video=True)
+    obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_video=True)
     dataset_features = {**action_features, **obs_features}
 
     dataset = LeRobotDataset.create(
-        repo_id=t_cfg.dataset.repo_id,
+        repo_id="/mydataset2",
         fps=t_cfg.fps,
-        root=t_cfg.dataset.root,
+        root=Path('./data2'),
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
-        image_writer_processes=t_cfg.dataset.num_image_writer_processes,
-        image_writer_threads=t_cfg.dataset.num_image_writer_threads_per_camera * len(robot.cameras),
-        batch_encoding_size=t_cfg.dataset.video_encoding_batch_size,
+        image_writer_processes=2,
+        image_writer_threads=2 * len(robot.cameras),
+        batch_encoding_size=16,
     )
 
     teleop.connect()
     robot.connect()
     
-    #
-    # connect to IPwebcam
-    #
-    
     try:
         robot.reset_position()
-        input("Environment set up?") # environment scenario updated manually
+        input("\nEnvironment set up?\n") # environment scenario updated manually
         
         with VideoEncodingManager(dataset):
             while True:
-                print("New episode starting...")
+                print("New episode starting... ^C when done or to stop.")
                 try:
-                    teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_stream=webcam_url, dataset=dataset) # send IPwebcam to teleop loop 
+                    teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset) # send IPwebcam to teleop loop 
           
                 except KeyboardInterrupt:
-                    print("Ending episode.")
-                    if strtobool(input("Save episode?")):
+                    print("\nEnding episode.")
+                    if strtobool(input("\nSave episode?\n")):
                         # validate last step (?)
                         print("Saving episode...")
-                        # Form Lerobot episode from episode_data
+                        dataset.save_episode()
                         
                         print("Episode saved.")
                     else:
                         print("Ignoring episode.")
                 robot.reset_position() # use default start position
-                input("Environment set up? (^C to exit)") # environment scenario updated manually
+                input("\nEnvironment set up? (^C to exit)") # environment scenario updated manually
     except KeyboardInterrupt:
+        print("\nExiting episode loop.")
         try:
-            if strtobool(input("Save dataset?")):
-                print("Saving dataset.")
-                dataset.save_episode()
+            if strtobool(input("Save dataset?\n")):
+                print("Great.")
+                
                 # Finish writing dataset
             else:
-                print("Deleting dataset.")
-                dataset.clear_episode_buffer()
+                raise KeyboardInterrupt # goto V
         except KeyboardInterrupt:
-            print("Deleting dataset and exiting (catch me!!).")
+            print("\nDeleting dataset...")
             # Remove temporary files
+            dataset.clear_episode_buffer() 
+            if dataset.root and os.path.exists(dataset.root):
+                shutil.rmtree(dataset.root)
+                print(f"Deleted dataset at /{dataset.root}")       
+        # Safely quit
+        input("[hit Enter to catch me]\n")
+        
             
-            # Safely quit
-            robot.bus.disable_torque()
-            robot.stop()
-            if t_cfg.display_data:
-                rr.rerun_shutdown()
-            teleop.disconnect()
-            robot.disconnect()
+        for t in range(60, 0, -1):
+            print(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
+            time.sleep(0.05)
+        print("\rBye!      ") 
+        
+        robot.bus.disable_torque()
+        if t_cfg.display_data:
+            rr.rerun_shutdown()
+        teleop.disconnect()
+        robot.disconnect()
 
 def probe_shape(url):
-    cap = cv2.VideoCapture(ip_url)
-
+    cap = cv2.VideoCapture(url)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
     if not cap.isOpened():
         raise RuntimeError("Cannot open IP webcam stream")
 
@@ -197,6 +218,7 @@ def teleop_config():
         fps=30,
         teleop_time_s=180.0,
         display_data=False,
+        
     )
     return teleop_config 
 
@@ -224,7 +246,8 @@ def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
 
 def main():
     
-    test_webcam(0)
+    #test_webcam("https://192.168.0.159:8080/shot.jpg")
+    #test_webcam("https://192.168.0.151:8080/shot.jpg")
     record_dataset()
 
 

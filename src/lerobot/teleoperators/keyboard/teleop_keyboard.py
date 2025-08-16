@@ -407,8 +407,7 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             if val and key in self.key_gripper:
                 gripper, direction = self.key_gripper[key]
                 adjust = direction * gripper_factor
-                if self.target_pos[gripper] >= 0 and adjust > 0:
-                    self.target_pos[gripper] += adjust
+                self.target_pos[gripper] += adjust
                 
                 
         self.current_pressed.clear()

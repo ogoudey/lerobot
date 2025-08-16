@@ -112,14 +112,28 @@ def rot_z(a):
                      [s, c, 0],
                      [0, 0, 1]])
 
-def rgb_frame_from_cap(cap):
-    ret, frame = webcam_cap.read()
-    if not ret:
-        print("Failed to grab frame")
-    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+from threading import Thread
+
+class CameraReader(Thread):
+    def __init__(self, cap):
+        super().__init__()
+        self.cap = cap
+        self.frame = None
+        self.running = True
+
+    def run(self):
+        while self.running:
+            if self.cap.grab():
+                ret, frame = self.cap.retrieve()
+                if ret:
+                    self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            time.sleep(0.001)  # small sleep to yield CPU
+
+    def stop(self):
+        self.running = False
 
 def teleop_loop(
-    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_stream = None, dataset=None, verbose=False
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_streams: list = [], dataset=None, verbose=False
 ):
     try:    # for safely disposing of VideoCapture
         display_len = max(len(key) for key in robot.action_features)
@@ -143,10 +157,22 @@ def teleop_loop(
 
         teleop.kinematics.robot.update_kinematics()
 
-        webcam_cap = cv2.VideoCapture(video_stream)
-        laptop_cap = cv2.VideoCapture(0)
+        webcam1_cap = cv2.VideoCapture(video_streams[0])
+        webcam2_cap = cv2.VideoCapture(video_streams[1])
+        # Set resolution & buffer size
+        for cap in [webcam1_cap, webcam2_cap]:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        # 2️⃣ Start a reader thread for each webcam
+        webcam1_reader = CameraReader(webcam1_cap)
+        webcam2_reader = CameraReader(webcam2_cap)
+        webcam1_reader.start()
+        webcam2_reader.start()
+        #laptop_cap = cv2.VideoCapture(0)
         
-        if not webcam_cap.isOpened():
+        if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
             raise RuntimeError("Cannot open IP webcam")
                 
         start = time.perf_counter()
@@ -155,9 +181,16 @@ def teleop_loop(
             
             observation = robot.get_observation()
         
-            webcam_frame = rgb_frame_from_cap(webcam_cap)
-            laptop_frame = rgb_frame_from_cap(laptop_cap)
-            
+            webcam1_frame = webcam1_reader.frame
+            webcam2_frame = webcam2_reader.frame
+            #laptop_frame = rgb_frame_from_cap(laptop_cap)
+            if webcam1_frame is None or webcam2_frame is None:
+                print("\rFrame not ready, waiting...", end="")
+                time.sleep(0.005)  # tiny sleep
+                continue
+            else:
+                print("\Retrieving frames...", end="")
+                
             action = teleop.get_action()
             
             if display_data:
@@ -184,12 +217,12 @@ def teleop_loop(
             if dataset is not None:
                 dataset.add_frame(
                     frame={
-                        **observation,   # robot state, sensor readings, images
-                        **action,         # commanded torques/positions
-                        "observation/images/phone": webcam_frame,
-                        "observation/images/laptop": laptop_frame,
+                        "observation.state": np.array(initial_joints_deg, dtype=np.float32),   # robot state
+                        "observation.images.side": webcam1_frame,
+                        "observation.images.front": webcam2_frame,
+                        "action": np.array(calculated_new_joints_deg, dtype=np.float32),
                     },
-                    task="teleop",        # or whatever task name you want
+                    task="teleop",        # or whatever
                     timestamp=time.perf_counter() - start,
                 )
             
@@ -208,8 +241,14 @@ def teleop_loop(
             if duration is not None and time.perf_counter() - start >= duration:
                 return
     except KeyboardInterrupt:
-        webcam_cap.release()
-        laptop_cap.release()
+        webcam1_reader.stop()
+        webcam2_reader.stop()
+        webcam1_reader.join()
+        webcam2_reader.join()
+        webcam1_cap.release()
+        webcam2_cap.release()
+        print("Web cams ended cleanly...")
+        #laptop_cap.release()
         raise KeyboardInterrupt
         
 

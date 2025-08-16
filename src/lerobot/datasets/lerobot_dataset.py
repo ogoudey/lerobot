@@ -251,6 +251,7 @@ class LeRobotDatasetMetadata:
         episode_tasks: list[str],
         episode_stats: dict[str, dict],
     ) -> None:
+        print("\tSaving episode...")
         self.info["total_episodes"] += 1
         self.info["total_frames"] += episode_length
 
