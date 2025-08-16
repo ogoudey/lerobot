@@ -230,8 +230,12 @@ class KeyboardJointTeleop(KeyboardTeleop):
         self.step = 1
         
     @property
-    def action_features(self):
-        raise NotImplementedError
+    def action_features(self) -> dict:
+        return {
+            "dtype": "float32",
+            "shape": (len(self.arm),),
+            "names": list(self.arm.motors),
+        }
 
     def _on_press(self, key):
         print(key, "pressed")
@@ -346,7 +350,7 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
         
 
     @property
-    def action_features(self) -> dict:
+    def old_action_features(self) -> dict:
         if self.config.use_gripper:
             return {
                 "dtype": "float32",
@@ -359,6 +363,14 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
                 "shape": (3,),
                 "names": {"delta_x": 0, "delta_y": 1, "delta_z": 2},
             }
+
+    @property
+    def action_features(self) -> dict:
+        return {
+            "dtype": "float32",
+            "shape": (len(self.arm),),
+            "names": {"motors": list(self.arm.motors)}, #
+        }
 
     def _on_press(self, key):
         if hasattr(key, "char"):
