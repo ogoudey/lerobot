@@ -45,6 +45,9 @@ from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointT
 from pathlib import Path
 from lerobot.teleoperate import teleop_loop
 
+from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
+from lerobot.datasets.video_utils import VideoEncodingManager
+
 logger = logging.getLogger(__name__)
 
 def teleoperate(cfg: TeleoperateConfig):
@@ -81,6 +84,29 @@ def record_dataset():
 
     teleop = make_teleoperator_from_config(t_cfg.teleop)
     robot = make_robot_from_config(t_cfg.robot)
+    robot.observation_features = {
+        **robot._motors_ft,
+        # Inject your own cameras with fixed sizes
+        "observation/images/front": (480, 640, 3),
+        "observation/images/side": (480, 640, 3),
+    }   # overriding property of so101
+
+
+    action_features = hw_to_dataset_features(robot.action_features, "action", use_videos=True)
+    obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_videos=True)
+    dataset_features = {**action_features, **obs_features}
+
+    dataset = LeRobotDataset.create(
+        repo_id=t_cfg.dataset.repo_id,
+        fps=t_cfg.fps,
+        root=t_cfg.dataset.root,
+        robot_type=robot.name,
+        features=dataset_features,
+        use_videos=True,
+        image_writer_processes=t_cfg.dataset.num_image_writer_processes,
+        image_writer_threads=t_cfg.dataset.num_image_writer_threads_per_camera * len(robot.cameras),
+        batch_encoding_size=t_cfg.dataset.video_encoding_batch_size,
+    )
 
     teleop.connect()
     robot.connect()
@@ -92,45 +118,45 @@ def record_dataset():
     try:
         robot.reset_position()
         input("Environment set up?") # environment scenario updated manually
-        while True:
-            print("New episode starting...")
-            episode_data = {}
-            done = False
-            try:
-                teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_stream=None, episode_data=episode_data) # send IPwebcam to teleop loop
-            
-      
-            except KeyboardInterrupt:
-                print("Ending episode.")
-                if strtobool(input("Save episode?")):
-                    # validate last step (?)
-                    print("Saving episode...")
-                    # Form Lerobot episode from episode_data
-                    
-                    print("Episode saved.")
-                else:
-                    print("Ignoring episode.")
-            robot.reset_position() # use default start position
-            input("Environment set up? (^C to exit)") # environment scenario updated manually
-    except KeyboardInterrupt:
-        try:
-            if strtobool(input("Save dataset?")):
-                print("Saving dataset.")
-                # Finish writing dataset
-            else:
-                print("Deleting dataset.")
-                # Remove temporary files
+        
+        with VideoEncodingManager(dataset):
+            while True:
+                print("New episode starting...")
+                try:
+                    teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_stream=None, dataset=dataset) # send IPwebcam to teleop loop 
+          
+                except KeyboardInterrupt:
+                    print("Ending episode.")
+                    if strtobool(input("Save episode?")):
+                        # validate last step (?)
+                        print("Saving episode...")
+                        # Form Lerobot episode from episode_data
+                        
+                        print("Episode saved.")
+                    else:
+                        print("Ignoring episode.")
+                robot.reset_position() # use default start position
+                input("Environment set up? (^C to exit)") # environment scenario updated manually
         except KeyboardInterrupt:
-            print("Deleting dataset and exiting (catch me!!).")
-            # Remove temporary files
-            
-            # Safely quit
-            robot.bus.disable_torque()
-            robot.stop()
-            if t_cfg.display_data:
-                rr.rerun_shutdown()
-            teleop.disconnect()
-            robot.disconnect()
+            try:
+                if strtobool(input("Save dataset?")):
+                    print("Saving dataset.")
+                    dataset.save_episode()
+                    # Finish writing dataset
+                else:
+                    print("Deleting dataset.")
+                    dataset.clear_episode_buffer()
+            except KeyboardInterrupt:
+                print("Deleting dataset and exiting (catch me!!).")
+                # Remove temporary files
+                
+                # Safely quit
+                robot.bus.disable_torque()
+                robot.stop()
+                if t_cfg.display_data:
+                    rr.rerun_shutdown()
+                teleop.disconnect()
+                robot.disconnect()
 
   
 def teleop_config():

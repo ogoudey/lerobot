@@ -112,7 +112,7 @@ def rot_z(a):
                      [0, 0, 1]])
 
 def teleop_loop(
-    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_stream = None, episode_data={}, verbose=False
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_stream = None, dataset=None, verbose=False
 ):
     display_len = max(len(key) for key in robot.action_features)
     start = time.perf_counter()
@@ -131,11 +131,10 @@ def teleop_loop(
     
     init_fk = calculated_ee_pos[:3, 3]
     if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
-        teleop.target_pos["x"] =  init_fk[0]
-        teleop.target_pos["y"] =  init_fk[1]    # overriding
-        teleop.target_pos["z"] =  init_fk[2]
+        teleop.target_pos["x"], teleop.target_pos["y"], teleop.target_pos["z"] = init_fk
 
     teleop.kinematics.robot.update_kinematics()
+    
     while True:
         loop_start = time.perf_counter()
         
@@ -167,6 +166,17 @@ def teleop_loop(
             action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
             action["gripper.pos"] = target_gripper
         robot.send_action(action) # comment for mock?
+        
+        if dataset is not None:
+            dataset.add_frame(
+                frame={
+                    **observation,   # robot state, sensor readings, images
+                    **action         # commanded torques/positions
+                },
+                task="teleop",        # or whatever task name you want
+                timestamp=time.perf_counter() - start,
+            )
+        
         dt_s = time.perf_counter() - loop_start
         busy_wait(1 / fps - dt_s)
 
@@ -178,11 +188,11 @@ def teleop_loop(
                 print(f"{motor:<{display_len}} | {value:>7.2f}")
 
             print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
-
+            move_cursor_up(len(action) + 10)
         if duration is not None and time.perf_counter() - start >= duration:
             return
 
-        move_cursor_up(len(action) + 10)
+
 
 
 @draccus.wrap()
