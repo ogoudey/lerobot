@@ -45,7 +45,7 @@ from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointT
 from pathlib import Path
 import shutil
 import os
-from lerobot.teleoperate import teleop_loop
+from lerobot.teleoperate import teleop_loop, test_record_loop
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
@@ -90,8 +90,8 @@ def record_dataset():
     teleop = make_teleoperator_from_config(t_cfg.teleop)
     robot = make_robot_from_config(t_cfg.robot)
     input("Start cameras... [hit Enter to continue]")
-    webcam1_url = "https://192.168.0.159:8080/shot.jpg"
-    webcam2_url = "https://192.168.0.151:8080/shot.jpg"
+    webcam1_url = "rtsp://192.168.0.159:8080/h264_ulaw.sdp"
+    webcam2_url = "rtsp://192.168.0.151:8080/h264_ulaw.sdp"
     urls = [webcam1_url, webcam2_url]
     try:
         webcam1_image_shape = probe_shape(webcam1_url)
@@ -101,28 +101,28 @@ def record_dataset():
         print(e, "\nResuming...")
         raise RuntimeError
         webcam1_image_shape, webcam2_image_shape = (0), (0)
-    robot.observation_features = {
+    robot_observation_features = {
         **robot._motors_ft,
-        "side": webcam1_image_shape,
-        "front": webcam2_image_shape,
+        "front": webcam1_image_shape,
+        "side": webcam2_image_shape,
         #"observation/images/front": laptop_image_shape,
     }   # overriding property of so101
     
     
 
     action_features = hw_to_dataset_features(robot.action_features, "action", use_video=True)
-    obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_video=True)
+    obs_features = hw_to_dataset_features(robot_observation_features, "observation", use_video=True)
     dataset_features = {**action_features, **obs_features}
 
     dataset = LeRobotDataset.create(
         repo_id="/mydataset2",
         fps=t_cfg.fps,
-        root=Path('./data2'),
+        root=Path('./data' + str(random.randint(0, 100))),
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
-        image_writer_processes=2,
-        image_writer_threads=2 * len(robot.cameras),
+        image_writer_processes=0,
+        image_writer_threads=4 * 2, # 2 times cameras
         batch_encoding_size=16,
     )
 
@@ -140,24 +140,20 @@ def record_dataset():
                     teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset) # send IPwebcam to teleop loop 
           
                 except KeyboardInterrupt:
-                    print("\nEnding episode.")
-                    if strtobool(input("\nSave episode?\n")):
-                        # validate last step (?)
-                        print("Saving episode...")
-                        dataset.save_episode()
-                        
-                        print("Episode saved.")
-                    else:
-                        print("Ignoring episode.")
+                    print("Saving episode (out)")
+                    print("[DEBUG] Buffer length before save:", len(dataset.episode_buffer))
+                    dataset.save_episode()
+                    print("Saved episode (out)")
+                input("\nReset robot? (^C to exit)")
                 robot.reset_position() # use default start position
                 input("\nEnvironment set up? (^C to exit)") # environment scenario updated manually
     except KeyboardInterrupt:
+    
         print("\nExiting episode loop.")
         try:
-            if strtobool(input("Save dataset?\n")):
+            chat = input("Save dataset?\n")
+            if strtobool(chat) or chat == "":
                 print("Great.")
-                
-                # Finish writing dataset
             else:
                 raise KeyboardInterrupt # goto V
         except KeyboardInterrupt:
@@ -181,21 +177,54 @@ def record_dataset():
             rr.rerun_shutdown()
         teleop.disconnect()
         robot.disconnect()
+        
+import random
+def dummy_dataset():
+    robot_motors_ft = {f"{motor}.pos": float for motor in ["A", "B", "C", "D", "E", "F"]}
+    webcam1_image_shape = probe_shape("https://192.168.0.151:8080/shot.jpg")
+    robot_observation_features = {
+        **robot_motors_ft,
+        "side": webcam1_image_shape,
+        #"observation/images/front": laptop_image_shape,
+    }   # overriding property of so101
+    
+    
+
+    action_features = hw_to_dataset_features(robot_motors_ft, "action", use_video=True)
+    obs_features = hw_to_dataset_features(robot_observation_features, "observation", use_video=True)
+    dataset_features = {**action_features, **obs_features}
+
+    dataset = LeRobotDataset.create(
+        repo_id="/mydataset2",
+        fps=30,
+        root=Path('./data' + str(random.randint(0, 100))),
+        robot_type="my_robot",
+        features=dataset_features,
+        use_videos=True,
+        image_writer_processes=2,
+        image_writer_threads=2 * 1,
+        batch_encoding_size=16,
+    )
+    test_record_loop(dataset)
+    dataset.save_episode()
+    
+
 
 def probe_shape(url):
     cap = cv2.VideoCapture(url)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     if not cap.isOpened():
         raise RuntimeError("Cannot open IP webcam stream")
 
     ret, frame = cap.read()
     if not ret:
         raise RuntimeError("Failed to grab frame")
-
-    print("Frame shape:", frame.shape)  # (height, width, channels)
-
+    frame = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_AREA)
+    print("Frame:", frame.shape, frame.dtype)
     cap.release()
+    
     return frame.shape
   
 def teleop_config():
@@ -248,6 +277,8 @@ def main():
     
     #test_webcam("https://192.168.0.159:8080/shot.jpg")
     #test_webcam("https://192.168.0.151:8080/shot.jpg")
+    
+    #dummy_dataset()
     record_dataset()
 
 

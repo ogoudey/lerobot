@@ -382,6 +382,16 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             key = key.char
         self.event_queue.put((key, False))
 
+    def reset(self):
+        self.target_pos = {
+            "x": 0.2,
+            "y": 0,
+            "z": 0.2,
+            "roll": 0.0,
+            "pitch": 90.0,
+            "gripper": 0.0,
+        }
+        
     def get_action(self) -> dict[str, Any]:
         if not self.is_connected:
             raise DeviceNotConnectedError(

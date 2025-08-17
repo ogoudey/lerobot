@@ -113,20 +113,43 @@ def rot_z(a):
                      [0, 0, 1]])
 
 from threading import Thread
+import PIL
 
 class CameraReader(Thread):
     def __init__(self, cap):
         super().__init__()
         self.cap = cap
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         self.frame = None
         self.running = True
+        
+        self.frame_updates = 0
 
     def run(self):
         while self.running:
+            ret, frame = self.cap.read()
+            if ret:
+                self.frame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (320, 240)).copy()
+                self.frame_updates += 1
+                print("Grab?", self.cap.grab())
+                print("\rUpdated frame x", self.frame_updates, end="\n")
+            else:
+                print("No ret", ret)
+            """
             if self.cap.grab():
                 ret, frame = self.cap.retrieve()
                 if ret:
-                    self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    
+                    frame = rgb.astype(np.uint8, copy=False)
+                    self.frame = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_AREA).copy()
+                    self.frame_updates += 1
+                    print("Updated frame x", self.frame_updates)
+            """
             time.sleep(0.001)  # small sleep to yield CPU
 
     def stop(self):
@@ -159,11 +182,6 @@ def teleop_loop(
 
         webcam1_cap = cv2.VideoCapture(video_streams[0])
         webcam2_cap = cv2.VideoCapture(video_streams[1])
-        # Set resolution & buffer size
-        for cap in [webcam1_cap, webcam2_cap]:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         # 2️⃣ Start a reader thread for each webcam
         webcam1_reader = CameraReader(webcam1_cap)
@@ -171,9 +189,14 @@ def teleop_loop(
         webcam1_reader.start()
         webcam2_reader.start()
         #laptop_cap = cv2.VideoCapture(0)
-        
+
         if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
             raise RuntimeError("Cannot open IP webcam")
+           
+        while webcam1_reader.frame is None:
+            time.sleep(0.01)
+        while webcam2_reader.frame is None:
+            time.sleep(0.01)
                 
         start = time.perf_counter()
         while True:
@@ -181,16 +204,17 @@ def teleop_loop(
             
             observation = robot.get_observation()
         
-            webcam1_frame = webcam1_reader.frame
-            webcam2_frame = webcam2_reader.frame
+            #webcam1_frame = webcam1_reader.frame
+            #webcam2_frame = webcam2_reader.frame   # we do this later
             #laptop_frame = rgb_frame_from_cap(laptop_cap)
+            """
             if webcam1_frame is None or webcam2_frame is None:
                 print("\rFrame not ready, waiting...", end="")
                 time.sleep(0.005)  # tiny sleep
                 continue
             else:
-                print("\Retrieving frames...", end="")
-                
+                print("\rRetrieving frames...", end="")
+            """
             action = teleop.get_action()
             
             if display_data:
@@ -215,15 +239,15 @@ def teleop_loop(
             robot.send_action(action) # comment for mock?
             
             if dataset is not None:
+                #print(np.mean(webcam1_frame), np.mean(webcam2_frame))
                 dataset.add_frame(
                     frame={
                         "observation.state": np.array(initial_joints_deg, dtype=np.float32),   # robot state
-                        "observation.images.side": webcam1_frame,
-                        "observation.images.front": webcam2_frame,
+                        "observation.images.front": webcam1_reader.frame.copy(),
+                        "observation.images.side": webcam2_reader.frame.copy(),
                         "action": np.array(calculated_new_joints_deg, dtype=np.float32),
                     },
                     task="teleop",        # or whatever
-                    timestamp=time.perf_counter() - start,
                 )
             
             dt_s = time.perf_counter() - loop_start
@@ -251,6 +275,32 @@ def teleop_loop(
         #laptop_cap.release()
         raise KeyboardInterrupt
         
+def test_record_loop(dataset):
+    webcam1_cap = cv2.VideoCapture(0)
+    
+
+    # 2️⃣ Start a reader thread for each webcam
+    webcam1_reader = CameraReader(webcam1_cap)
+    webcam1_reader.start()
+    print("Waiting...")
+    time.sleep(3)
+    for i in range(0, 30):
+        start=time.perf_counter()
+        webcam1_frame = webcam1_reader.frame
+        dataset.add_frame(
+            frame={
+                "observation.state": np.array([0,0,0,0,0,0], dtype=np.float32),   # robot state
+                "observation.images.side": webcam1_frame,
+                "action": np.array([1,1,1,1,1,1], dtype=np.float32),
+            },
+            task="test",        # or whatever
+            #timestamp=time.perf_counter() - start,
+        )
+        print("step")
+        time.sleep(0.1)
+    webcam1_reader.stop()
+    webcam1_reader.join()
+    webcam1_cap.release()
 
 
 

@@ -73,9 +73,10 @@ class SO101Follower(Robot):
             cam: (self.config.cameras[cam].height, self.config.cameras[cam].width, 3) for cam in self.cameras
         }
 
-    @cached_property
+    @cached_property # unused
     def observation_features(self) -> dict[str, type | tuple]:
         return {**self._motors_ft, **self._cameras_ft}
+        
 
     @cached_property
     def action_features(self) -> dict[str, type]:

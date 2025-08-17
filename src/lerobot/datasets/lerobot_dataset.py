@@ -251,7 +251,7 @@ class LeRobotDatasetMetadata:
         episode_tasks: list[str],
         episode_stats: dict[str, dict],
     ) -> None:
-        print("\tSaving episode...")
+        print("Saving")
         self.info["total_episodes"] += 1
         self.info["total_frames"] += episode_length
 
@@ -275,6 +275,7 @@ class LeRobotDatasetMetadata:
         self.episodes_stats[episode_index] = episode_stats
         self.stats = aggregate_stats([self.stats, episode_stats]) if self.stats else episode_stats
         write_episode_stats(episode_index, episode_stats, self.root)
+        print("Done saving")
 
     def update_video_info(self) -> None:
         """
@@ -812,28 +813,27 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.episode_buffer["size"] += 1
 
     def save_episode(self, episode_data: dict | None = None) -> None:
-        """
-        This will save to disk the current episode in self.episode_buffer.
+        import time
 
-        Video encoding is handled automatically based on batch_encoding_size:
-        - If batch_encoding_size == 1: Videos are encoded immediately after each episode
-        - If batch_encoding_size > 1: Videos are encoded in batches.
+        print("\n[DEBUG] ---- save_episode called ----")
 
-        Args:
-            episode_data (dict | None, optional): Dict containing the episode data to save. If None, this will
-                save the current episode in self.episode_buffer, which is filled with 'add_frame'. Defaults to
-                None.
-        """
         if not episode_data:
             episode_buffer = self.episode_buffer
+            print(f"[DEBUG] Using internal episode_buffer, size={len(episode_buffer)} keys")
+        else:
+            episode_buffer = episode_data
+            print("[DEBUG] Using provided episode_data")
 
+        print("[DEBUG] Validating buffer...")
         validate_episode_buffer(episode_buffer, self.meta.total_episodes, self.features)
+        print("[DEBUG] Validation OK")
 
         # size and task are special cases that won't be added to hf_dataset
         episode_length = episode_buffer.pop("size")
         tasks = episode_buffer.pop("task")
         episode_tasks = list(set(tasks))
         episode_index = episode_buffer["episode_index"]
+        print(f"[DEBUG] Episode length={episode_length}, episode_index={episode_index}, tasks={episode_tasks}")
 
         episode_buffer["index"] = np.arange(self.meta.total_frames, self.meta.total_frames + episode_length)
         episode_buffer["episode_index"] = np.full((episode_length,), episode_index)
@@ -842,44 +842,57 @@ class LeRobotDataset(torch.utils.data.Dataset):
         for task in episode_tasks:
             task_index = self.meta.get_task_index(task)
             if task_index is None:
+                print(f"[DEBUG] Adding new task: {task}")
                 self.meta.add_task(task)
 
         # Given tasks in natural language, find their corresponding task indices
         episode_buffer["task_index"] = np.array([self.meta.get_task_index(task) for task in tasks])
 
         for key, ft in self.features.items():
-            # index, episode_index, task_index are already processed above, and image and video
-            # are processed separately by storing image path and frame info as meta data
             if key in ["index", "episode_index", "task_index"] or ft["dtype"] in ["image", "video"]:
                 continue
-            episode_buffer[key] = np.stack(episode_buffer[key])
+            arr = np.stack(episode_buffer[key])
+            episode_buffer[key] = arr
+            print(f"[DEBUG] Feature '{key}' stacked: shape={arr.shape}, dtype={arr.dtype}")
 
+        print("[DEBUG] Waiting for image writers...")
+        t0 = time.time()
         self._wait_image_writer()
+        print(f"[DEBUG] Image writers flushed in {time.time()-t0:.2f}s")
+
+        print("[DEBUG] Saving episode table...")
         self._save_episode_table(episode_buffer, episode_index)
+        print("[DEBUG] Table saved")
+
+        print("[DEBUG] Computing episode stats...")
         ep_stats = compute_episode_stats(episode_buffer, self.features)
+        print(f"[DEBUG] Episode stats: {ep_stats}")
 
         has_video_keys = len(self.meta.video_keys) > 0
         use_batched_encoding = self.batch_encoding_size > 1
+        print(f"[DEBUG] has_video_keys={has_video_keys}, use_batched_encoding={use_batched_encoding}")
 
         if has_video_keys and not use_batched_encoding:
+            print("[DEBUG] Encoding episode videos immediately...")
+            t0 = time.time()
             self.encode_episode_videos(episode_index)
+            print(f"[DEBUG] Videos encoded in {time.time()-t0:.2f}s")
 
-        # `meta.save_episode` should be executed after encoding the videos
+        print("[DEBUG] Saving meta for episode...")
         self.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats)
+        print("[DEBUG] Meta saved")
 
-        # Check if we should trigger batch encoding
         if has_video_keys and use_batched_encoding:
             self.episodes_since_last_encoding += 1
+            print(f"[DEBUG] episodes_since_last_encoding={self.episodes_since_last_encoding}")
             if self.episodes_since_last_encoding == self.batch_encoding_size:
                 start_ep = self.num_episodes - self.batch_encoding_size
                 end_ep = self.num_episodes
-                logging.info(
-                    f"Batch encoding {self.batch_encoding_size} videos for episodes {start_ep} to {end_ep - 1}"
-                )
+                print(f"[DEBUG] Batch encoding {self.batch_encoding_size} videos for episodes {start_ep}..{end_ep-1}")
                 self.batch_encode_videos(start_ep, end_ep)
                 self.episodes_since_last_encoding = 0
 
-        # Episode data index and timestamp checking
+        print("[DEBUG] Checking timestamps sync...")
         ep_data_index = get_episode_data_index(self.meta.episodes, [episode_index])
         ep_data_index_np = {k: t.numpy() for k, t in ep_data_index.items()}
         check_timestamps_sync(
@@ -889,17 +902,24 @@ class LeRobotDataset(torch.utils.data.Dataset):
             self.fps,
             self.tolerance_s,
         )
+        print("[DEBUG] Timestamp sync OK")
 
-        # Verify that we have one parquet file per episode and the number of video files matches the number of encoded episodes
+        print("[DEBUG] Verifying parquet and video counts...")
         parquet_files = list(self.root.rglob("*.parquet"))
-        assert len(parquet_files) == self.num_episodes
         video_files = list(self.root.rglob("*.mp4"))
-        assert len(video_files) == (self.num_episodes - self.episodes_since_last_encoding) * len(
-            self.meta.video_keys
+        print(f"[DEBUG] parquet_files={len(parquet_files)}, expected={self.num_episodes}")
+        print(
+            f"[DEBUG] video_files={len(video_files)}, expected={(self.num_episodes - self.episodes_since_last_encoding) * len(self.meta.video_keys)}"
         )
+        assert len(parquet_files) == self.num_episodes
+        assert len(video_files) == (self.num_episodes - self.episodes_since_last_encoding) * len(self.meta.video_keys)
 
-        if not episode_data:  # Reset the buffer
+        if not episode_data:
+            print("[DEBUG] Resetting episode_buffer")
             self.episode_buffer = self.create_episode_buffer()
+
+        print("[DEBUG] ---- save_episode finished ----\n")
+
 
     def _save_episode_table(self, episode_buffer: dict, episode_index: int) -> None:
         episode_dict = {key: episode_buffer[key] for key in self.hf_features}
