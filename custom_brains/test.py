@@ -114,17 +114,21 @@ def record_dataset():
     obs_features = hw_to_dataset_features(robot_observation_features, "observation", use_video=True)
     dataset_features = {**action_features, **obs_features}
 
-    dataset = LeRobotDataset.create(
-        repo_id="/mydataset2",
-        fps=t_cfg.fps,
-        root=Path('./data' + str(random.randint(0, 100))),
-        robot_type=robot.name,
-        features=dataset_features,
-        use_videos=True,
-        image_writer_processes=0,
-        image_writer_threads=4 * 2, # 2 times cameras
-        batch_encoding_size=16,
-    )
+    try:
+        dataset = LeRobotDataset.create(
+            repo_id="/olindatasets",
+            fps=t_cfg.fps,
+            #root=Path('./data' + str(random.randint(0, 100))),
+            root=Path('./dataset2'),
+            robot_type=robot.name,
+            features=dataset_features,
+            use_videos=True,
+            image_writer_processes=0,
+            image_writer_threads=4 * 2, # 2 times cameras
+            batch_encoding_size=16,
+        )
+    except FileExistsError:
+        dataset = LeRobotDataset('dataset')
 
     teleop.connect()
     robot.connect()
@@ -159,10 +163,13 @@ def record_dataset():
         except KeyboardInterrupt:
             print("\nDeleting dataset...")
             # Remove temporary files
-            dataset.clear_episode_buffer() 
-            if dataset.root and os.path.exists(dataset.root):
-                shutil.rmtree(dataset.root)
-                print(f"Deleted dataset at /{dataset.root}")       
+            if strtobool(input("Are you sure you want to delete?!")):
+                dataset.clear_episode_buffer() 
+                if dataset.root and os.path.exists(dataset.root):
+                    shutil.rmtree(dataset.root)
+                    print(f"Deleted dataset at /{dataset.root}")       
+        except KeyboardInterrupt:
+            pass
         # Safely quit
         input("[hit Enter to catch me]\n")
         
@@ -195,7 +202,7 @@ def dummy_dataset():
     dataset_features = {**action_features, **obs_features}
 
     dataset = LeRobotDataset.create(
-        repo_id="/mydataset2",
+        repo_id="/datasets",
         fps=30,
         root=Path('./data' + str(random.randint(0, 100))),
         robot_type="my_robot",
@@ -272,6 +279,7 @@ def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
     plt.axis("off")
     plt.show()
     input(".")
+    
 
 def main():
     
@@ -279,6 +287,7 @@ def main():
     #test_webcam("https://192.168.0.151:8080/shot.jpg")
     
     #dummy_dataset()
+
     record_dataset()
 
 
