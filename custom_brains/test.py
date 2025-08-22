@@ -45,7 +45,7 @@ from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointT
 from pathlib import Path
 import shutil
 import os
-from lerobot.teleoperate import teleop_loop, test_record_loop
+from lerobot.teleoperate import teleop_loop, test_record_loop, CameraReader
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
@@ -279,8 +279,63 @@ def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
     plt.axis("off")
     plt.show()
     input(".")
-    
 
+from lerobot.policies.factory import make_policy
+from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.configs.policies import PreTrainedConfig
+from lerobot.utils.control_utils import (
+    init_keyboard_listener,
+    is_headless,
+    predict_action,
+    sanity_check_dataset_name,
+    sanity_check_dataset_robot_compatibility,
+)
+from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+
+def test_policy():
+
+    robot_config = SO101FollowerConfig(
+        port="/dev/ttyACM0",
+        id="the_robot",
+        use_degrees=False,
+    )
+    robot = SO101Follower(robot_config)
+    #robot.connect()
+    
+    smolvla_policy = SmolVLAPolicy.from_pretrained("/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-08-18/13-40-25_smolvla/checkpoints/last/pretrained_model")
+      
+    webcam1_url = "rtsp://192.168.0.159:8080/h264_ulaw.sdp"
+    webcam2_url = "rtsp://192.168.0.151:8080/h264_ulaw.sdp"
+    webcam1_cap = cv2.VideoCapture(webcam1_url)
+    webcam2_cap = cv2.VideoCapture(webcam2_url)
+    webcam1_reader = CameraReader(webcam1_cap)
+    webcam2_reader = CameraReader(webcam2_cap)
+    webcam1_reader.start()
+    webcam2_reader.start()
+    if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
+        raise RuntimeError("Cannot open IP webcam") 
+    while webcam1_reader.frame is None:
+        time.sleep(0.01)
+    while webcam2_reader.frame is None:
+        time.sleep(0.01)
+        
+    joint_state = robot.get_observation()
+    camera_1 = webcam1_reader.frame
+    camera_2 = webcam2_reader.frame
+    observation_frame = {
+        "observation.state": np.array(joint_state, dtype=np.float32),   # robot state
+        "observation.images.front": webcam1_reader.frame,
+        "observation.images.side": webcam2_reader.frame
+    }
+    action_values = predict_action(
+        observation_frame,
+        smolvla_policy,
+        task="Pick up the object",
+        robot_type=robot.robot_type,
+    )
+    action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
+    print("Sending", action)
+    
 def main():
     
     #test_webcam("https://192.168.0.159:8080/shot.jpg")
@@ -288,7 +343,9 @@ def main():
     
     #dummy_dataset()
 
-    record_dataset()
+    #record_dataset()
+    
+    test_policy()
 
 
 if __name__ == "__main__":
