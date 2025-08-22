@@ -377,6 +377,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
     def get_optim_params(self) -> dict:
         return self.parameters()
 
+    
     def _get_action_chunk(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
         # TODO: Check if this for loop is needed.
         # Context: In fact, self.queues contains only ACTION field, and in inference, we don't have action in the batch
@@ -386,7 +387,15 @@ class SmolVLAPolicy(PreTrainedPolicy):
         for k in batch:
             if k in self._queues and k != ACTION:
                 batch[k] = torch.stack(list(self._queues[k]), dim=1)
+        # Verifications... #
+        print("State:", batch["observation.state"].cpu().numpy())
+        for cam_key in ["observation.images.front", "observation.images.side"]:
+            if cam_key in batch:
+                img = batch[cam_key]
+                print(f"{cam_key}: mean={img.mean().item():.2f}, std={img.std().item():.2f}, min={img.min().item()}, max={img.max().item()}")
 
+        #
+        
         images, img_masks = self.prepare_images(batch)
         state = self.prepare_state(batch)
         lang_tokens, lang_masks = self.prepare_language(batch)
@@ -423,7 +432,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         return actions
 
     @torch.no_grad()
-    def select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def old_select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
         """Select a single action given environment observations.
 
         This method wraps `select_actions` in order to return one action at a time for execution in the
@@ -437,11 +446,41 @@ class SmolVLAPolicy(PreTrainedPolicy):
         # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
         # querying the policy.
         if len(self._queues[ACTION]) == 0:
+            print("Getting", self.config.n_action_steps, "new actions...")
+            
             actions = self._get_action_chunk(batch, noise)
 
             # `self.predict_action_chunk` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
             # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
             self._queues[ACTION].extend(actions.transpose(0, 1)[: self.config.n_action_steps])
+
+        return self._queues[ACTION].popleft()
+        
+    @torch.no_grad()
+    def select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+        """
+        Added function.
+        
+        
+        """
+        self.eval()
+        batch = self._prepare_batch(batch)
+        self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
+
+        # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
+        # querying the policy.
+        g = 0.5
+        
+        if len(self._queues[ACTION]) < self.config.n_action_steps * g:
+            print("Getting", self.config.n_action_steps, "new actions...")
+            
+            actions = self._get_action_chunk(batch, noise)
+
+            # `self.predict_action_chunk` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
+            # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
+            self._queues[ACTION] = deque(
+                actions.transpose(0, 1)[: self.config.n_action_steps], maxlen=self.config.n_action_steps
+            )
 
         return self._queues[ACTION].popleft()
 
