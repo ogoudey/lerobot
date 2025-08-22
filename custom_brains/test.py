@@ -291,19 +291,21 @@ from lerobot.utils.control_utils import (
     sanity_check_dataset_robot_compatibility,
 )
 from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+import numpy as np
+import torch
 
 def test_policy():
 
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
-        id="the_robot",
+        id="my_robot",
         use_degrees=False,
     )
     robot = SO101Follower(robot_config)
-    #robot.connect()
+    robot.connect()
     
     smolvla_policy = SmolVLAPolicy.from_pretrained("/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-08-18/13-40-25_smolvla/checkpoints/last/pretrained_model")
-      
+    print("Policy made.")
     webcam1_url = "rtsp://192.168.0.159:8080/h264_ulaw.sdp"
     webcam2_url = "rtsp://192.168.0.151:8080/h264_ulaw.sdp"
     webcam1_cap = cv2.VideoCapture(webcam1_url)
@@ -318,24 +320,34 @@ def test_policy():
         time.sleep(0.01)
     while webcam2_reader.frame is None:
         time.sleep(0.01)
-        
-    joint_state = robot.get_observation()
-    camera_1 = webcam1_reader.frame
-    camera_2 = webcam2_reader.frame
-    observation_frame = {
-        "observation.state": np.array(joint_state, dtype=np.float32),   # robot state
-        "observation.images.front": webcam1_reader.frame,
-        "observation.images.side": webcam2_reader.frame
-    }
-    action_values = predict_action(
-        observation_frame,
-        smolvla_policy,
-        task="Pick up the object",
-        robot_type=robot.robot_type,
-    )
-    action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
-    print("Sending", action)
-    
+    print("Cameras on.")
+    robot.reset_position()
+    while True:
+        start_loop_t = time.perf_counter()
+        joint_state = robot.get_observation()
+        joints_deg = np.array([robot.present_pos[name.split(".pos")[0]] for name in robot.action_features])
+        camera_1 = webcam1_reader.frame
+        camera_2 = webcam2_reader.frame
+        observation_frame = {
+            "observation.state": np.array(joints_deg, dtype=np.float32),   # robot state
+            "observation.images.front": webcam1_reader.frame,
+            "observation.images.side": webcam2_reader.frame
+        }
+        #print("Predicting action...")
+        action_values = predict_action(
+            observation_frame,
+            smolvla_policy,
+            device=torch.device("cpu"),
+            use_amp=False,
+            task="Pick up the object",
+            robot_type=robot.robot_type,
+        )
+        action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
+        #print("Sending", action)
+        robot.send_action(action)
+        #time.sleep(0.033)  # 30hz
+        dt_s = time.perf_counter() - start_loop_t
+        busy_wait(1 / 30 - dt_s)
 def main():
     
     #test_webcam("https://192.168.0.159:8080/shot.jpg")

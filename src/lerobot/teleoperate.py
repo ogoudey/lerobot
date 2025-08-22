@@ -135,10 +135,10 @@ class CameraReader(Thread):
             if ret:
                 self.frame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (320, 240)).copy()
                 self.frame_updates += 1
-                print("Grab?", self.cap.grab())
-                print("\rUpdated frame x", self.frame_updates, end="\n")
+                #print("Grab?", self.cap.grab())
+                #print("\rUpdated frame x", self.frame_updates, end="\n")
             else:
-                print("No ret", ret)
+                print("\rNo ret", ret, end="")
             """
             if self.cap.grab():
                 ret, frame = self.cap.retrieve()
