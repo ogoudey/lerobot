@@ -371,8 +371,8 @@ def main():
     #dummy_dataset()
 
     #record_dataset()
-    
-    test_policy()
+    teleoperate(teleop_config())
+    #test_policy()
 
 if __name__ == "__main__":
     main()

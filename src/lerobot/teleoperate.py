@@ -146,7 +146,7 @@ class CameraReader(Thread):
         self.running = False
 
 def teleop_loop(
-    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_streams: list = [], dataset=None, task, verbose=False
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_streams: list = [], dataset=None, task=None, verbose=False
 ):
     try:    # for safely disposing of VideoCapture
         display_len = max(len(key) for key in robot.action_features)
@@ -169,22 +169,22 @@ def teleop_loop(
             teleop.target_pos["x"], teleop.target_pos["y"], teleop.target_pos["z"] = init_fk
 
         teleop.kinematics.robot.update_kinematics()
+        if len(video_streams) > 0:
+            webcam1_cap = cv2.VideoCapture(video_streams[0])
+            webcam2_cap = cv2.VideoCapture(video_streams[1])
+            webcam1_reader = CameraReader(webcam1_cap)
+            webcam2_reader = CameraReader(webcam2_cap)
+            webcam1_reader.start()
+            webcam2_reader.start()
+            #laptop_cap = cv2.VideoCapture(0)
 
-        webcam1_cap = cv2.VideoCapture(video_streams[0])
-        webcam2_cap = cv2.VideoCapture(video_streams[1])
-        webcam1_reader = CameraReader(webcam1_cap)
-        webcam2_reader = CameraReader(webcam2_cap)
-        webcam1_reader.start()
-        webcam2_reader.start()
-        #laptop_cap = cv2.VideoCapture(0)
-
-        if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
-            raise RuntimeError("Cannot open IP webcam")
-           
-        while webcam1_reader.frame is None:
-            time.sleep(0.01)
-        while webcam2_reader.frame is None:
-            time.sleep(0.01)
+            if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
+                raise RuntimeError("Cannot open IP webcam")
+               
+            while webcam1_reader.frame is None:
+                time.sleep(0.01)
+            while webcam2_reader.frame is None:
+                time.sleep(0.01)
                 
         start = time.perf_counter()
         while True:
@@ -214,7 +214,7 @@ def teleop_loop(
                 action["gripper.pos"] = target_gripper
             robot.send_action(action) # comment for mock?
             
-            if dataset is not None:
+            if dataset is not None and len(video_streams) > 0:
 
                 dataset.add_frame(
                     frame={
@@ -223,7 +223,7 @@ def teleop_loop(
                         "observation.images.side": webcam2_reader.frame.copy(),
                         "action": np.array(calculated_new_joints_deg, dtype=np.float32),
                     },
-                    task="teleop",        # or whatever
+                    task=task,        # or whatever
                 )
             
             dt_s = time.perf_counter() - loop_start
@@ -241,14 +241,15 @@ def teleop_loop(
             if duration is not None and time.perf_counter() - start >= duration:
                 return
     except KeyboardInterrupt:
-        webcam1_reader.stop()
-        webcam2_reader.stop()
-        webcam1_reader.join()
-        webcam2_reader.join()
-        webcam1_cap.release()
-        webcam2_cap.release()
-        logging.info("Web cams ended cleanly...")
-        #laptop_cap.release()
+        if len(video_streams) > 0:
+            webcam1_reader.stop()
+            webcam2_reader.stop()
+            webcam1_reader.join()
+            webcam2_reader.join()
+            webcam1_cap.release()
+            webcam2_cap.release()
+            logging.info("Web cams ended cleanly...")
+            #laptop_cap.release()
         raise KeyboardInterrupt
         
 def test_record_loop(dataset):

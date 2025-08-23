@@ -347,8 +347,8 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             "gripper": 0.0,
         }
         
-        self.factor = 0.002
-        self.roll_pitch_factor = 1
+        self.factor = 0.0005
+        self.roll_pitch_factor = 0.5
         self.gripper_factor = 1
         
         
@@ -408,7 +408,7 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
 
         # Generate action based on current key states
         for key, val in self.current_pressed.items():
-            if not pressed:
+            if not val:
                 continue
             if val and key in self.key_to_delta:
                 axis, direction = self.key_to_delta[key]
