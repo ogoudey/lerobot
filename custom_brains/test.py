@@ -1,55 +1,71 @@
-from lerobot.robots import (  # noqa: F401
+# --- Standard library ---
+import logging
+import os
+import random
+import shutil
+import time
+from dataclasses import asdict, dataclass
+from distutils.util import strtobool
+from pathlib import Path
+from pprint import pformat
+
+# --- Third-party ---
+import cv2
+import numpy as np
+import rerun as rr
+import torch
+
+# --- LeRobot: robots ---
+from lerobot.robots import (
     Robot,
     RobotConfig,
-    bi_so100_follower,
-    hope_jr,
-    koch_follower,
     make_robot_from_config,
-    so100_follower,
     so101_follower,
-
 )
 from lerobot.robots.so101_follower import SO101FollowerConfig, SO101Follower
 
-from lerobot.teleoperators import (  # noqa: F401
+# --- LeRobot: teleoperators ---
+from lerobot.teleoperators import (
     Teleoperator,
     TeleoperatorConfig,
-    bi_so100_leader,
-    gamepad,
-    homunculus,
-    koch_leader,
     make_teleoperator_from_config,
-    so100_leader,
-    so101_leader,
+)
+from lerobot.teleoperators.keyboard.configuration_keyboard import (
+    KeyboardJointTeleopConfig,
+    KeyboardEndEffectorTeleopConfig,
 )
 
-from lerobot.teleoperate import TeleoperateConfig
+# --- LeRobot: teleoperate ---
+from lerobot.teleoperate import (
+    TeleoperateConfig,
+    CameraReader,
+    teleop_loop,
+    test_record_loop,
+)
 
+# --- LeRobot: policies ---
+from lerobot.policies.factory import make_policy
+from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.configs.policies import PreTrainedConfig
+from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+
+# --- LeRobot: datasets ---
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
+from lerobot.datasets.video_utils import VideoEncodingManager
+
+# --- LeRobot: utils ---
+from lerobot.utils.control_utils import (
+    init_keyboard_listener,
+    is_headless,
+    predict_action,
+    sanity_check_dataset_name,
+    sanity_check_dataset_robot_compatibility,
+)
 from lerobot.utils.robot_utils import busy_wait
 from lerobot.utils.utils import init_logging, move_cursor_up
 from lerobot.utils.visualization_utils import _init_rerun, log_rerun_data
 
-import logging
-import time
-from dataclasses import asdict, dataclass
-from pprint import pformat
-from distutils.util import strtobool
-
-import draccus
-import rerun as rr
-
-import cv2
-
-
-from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardJointTeleopConfig, KeyboardEndEffectorTeleopConfig
-from pathlib import Path
-import shutil
-import os
-from lerobot.teleoperate import teleop_loop, test_record_loop, CameraReader
-
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
-from lerobot.datasets.video_utils import VideoEncodingManager
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +96,6 @@ def teleoperate(cfg: TeleoperateConfig):
 def record_dataset():
     t_cfg = teleop_config()
 
-    
-    
     init_logging()
     logging.info(pformat(asdict(t_cfg)))
     if t_cfg.display_data:
@@ -98,7 +112,7 @@ def record_dataset():
         webcam2_image_shape = probe_shape(webcam2_url)
         #laptop_image_shape = probe_shape(0)
     except RuntimeError as e:
-        print(e, "\nResuming...")
+        logging.info("Cannot connect to webcams...")
         raise RuntimeError
         webcam1_image_shape, webcam2_image_shape = (0), (0)
     robot_observation_features = {
@@ -139,35 +153,34 @@ def record_dataset():
         
         with VideoEncodingManager(dataset):
             while True:
-                print("New episode starting... ^C when done or to stop.")
+                logging.info("New episode starting... ^C when done or to stop.")
                 try:
                     teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset) # send IPwebcam to teleop loop 
           
                 except KeyboardInterrupt:
-                    print("Saving episode (out)")
-                    print("[DEBUG] Buffer length before save:", len(dataset.episode_buffer))
+                    logging.info("Saving episode (out)")
                     dataset.save_episode()
-                    print("Saved episode (out)")
+                    logging.info("Saved episode (out)")
                 input("\nReset robot? (^C to exit)")
                 robot.reset_position() # use default start position
                 input("\nEnvironment set up? (^C to exit)") # environment scenario updated manually
     except KeyboardInterrupt:
     
-        print("\nExiting episode loop.")
+        logging.info("\nExiting episode loop.")
         try:
             chat = input("Save dataset?\n")
             if strtobool(chat) or chat == "":
-                print("Great.")
+                logging.info("Great. Saved.")
             else:
                 raise KeyboardInterrupt # goto V
         except KeyboardInterrupt:
-            print("\nDeleting dataset...")
+            logging.info("\nDeleting dataset...")
             # Remove temporary files
             if strtobool(input("Are you sure you want to delete?!")):
                 dataset.clear_episode_buffer() 
                 if dataset.root and os.path.exists(dataset.root):
                     shutil.rmtree(dataset.root)
-                    print(f"Deleted dataset at /{dataset.root}")       
+                    logging.info(f"Deleted dataset at /{dataset.root}")       
         except KeyboardInterrupt:
             pass
         # Safely quit
@@ -175,18 +188,20 @@ def record_dataset():
         
             
         for t in range(60, 0, -1):
-            print(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
+            logging.info(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
             time.sleep(0.05)
-        print("\rBye!      ") 
+        logging.info("\rBye!      ") 
         
         robot.bus.disable_torque()
         if t_cfg.display_data:
             rr.rerun_shutdown()
         teleop.disconnect()
         robot.disconnect()
-        
-import random
+  
+      
+
 def dummy_dataset():
+    """ Used for verifying the format of datasets. """
     robot_motors_ft = {f"{motor}.pos": float for motor in ["A", "B", "C", "D", "E", "F"]}
     webcam1_image_shape = probe_shape("https://192.168.0.151:8080/shot.jpg")
     robot_observation_features = {
@@ -218,6 +233,7 @@ def dummy_dataset():
 
 
 def probe_shape(url):
+    """ Helper function to get the dimensions of images """
     cap = cv2.VideoCapture(url)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
@@ -235,6 +251,7 @@ def probe_shape(url):
     return frame.shape
   
 def teleop_config():
+    """ Helper function to create a TeleoperateConfig """
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
         id="my_robot",
@@ -260,6 +277,7 @@ def teleop_config():
 
 
 def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
+    """ Used for testing the web cam at a given url. """
     import matplotlib.pyplot as plt
     cap = cv2.VideoCapture(url)
     if not cap.isOpened():
@@ -272,7 +290,7 @@ def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
         print("Failed to grab frame")
         return
 
-    # Convert BGR → RGB if you like, for display or saving
+    # Convert BGR → RGB
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     plt.imshow(frame_rgb)
@@ -280,22 +298,12 @@ def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
     plt.show()
     input(".")
 
-from lerobot.policies.factory import make_policy
-from lerobot.policies.pretrained import PreTrainedPolicy
-from lerobot.configs.policies import PreTrainedConfig
-from lerobot.utils.control_utils import (
-    init_keyboard_listener,
-    is_headless,
-    predict_action,
-    sanity_check_dataset_name,
-    sanity_check_dataset_robot_compatibility,
-)
-from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
-import numpy as np
-import torch
+
 
 def test_policy():
-
+    """ Runs the SmolVLA policy at policy_path. Finicky, not working fully. """
+    
+    policy_path = "/home/olin/Robotics/Projects/LeRobot-Projects/lerobot/outputs/train/2025-08-18/13-40-25_smolvla/checkpoints/last/pretrained_model"
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
         id="my_robot",
@@ -304,10 +312,10 @@ def test_policy():
     robot = SO101Follower(robot_config)
     robot.connect()
     
-    smolvla_policy = SmolVLAPolicy.from_pretrained("/home/olin/Robotics/Projects/LeRobot-Projects/lerobot/outputs/train/2025-08-18/13-40-25_smolvla/checkpoints/last/pretrained_model")
+    smolvla_policy = SmolVLAPolicy.from_pretrained()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    print("Policy made.")
+    logging.info("Policy made.")
     webcam1_url = "rtsp://192.168.0.159:8080/h264_ulaw.sdp"
     webcam2_url = "rtsp://192.168.0.151:8080/h264_ulaw.sdp"
     webcam1_cap = cv2.VideoCapture(webcam1_url)
@@ -322,7 +330,7 @@ def test_policy():
         time.sleep(0.01)
     while webcam2_reader.frame is None:
         time.sleep(0.01)
-    print("Cameras on.")
+    logging.info("Cameras on.")
     robot.reset_position()
     try:
         single_task="Pick up the object"
@@ -339,7 +347,6 @@ def test_policy():
                         "observation.images.front": webcam1_reader.frame,
                         "observation.images.side": webcam2_reader.frame
                     }
-                    #print("Predicting action...")
                     action_values = predict_action(
                         observation_frame,
                         smolvla_policy,
@@ -349,27 +356,23 @@ def test_policy():
                         robot_type=robot.robot_type,
                     )
                     action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
-                    print("Sending action")
+                    logging.info("Sending action")
                     robot.send_action(action)
                     dt_s = time.perf_counter() - start_loop_t
                     busy_wait(1 / 15 - dt_s)
             except KeyboardInterrupt:
                 single_task=input("New task? (^C to Exit)\n")
     except KeyboardInterrupt:
-        input("[hit Enter to catch me]\n")
-        
-            
+        input("[hit Enter to catch me]\n") 
         for t in range(60, 0, -1):
-            print(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
+            logging.info(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
             time.sleep(0.05)
-        print("\rBye!      ") 
-        
+        logging.info("\rBye!      ") 
         robot.bus.disable_torque()
-
         robot.disconnect()
         
 def main():
-    
+    """ A repetoire of useful main functions: """
     #test_webcam("https://192.168.0.159:8080/shot.jpg")
     #test_webcam("https://192.168.0.151:8080/shot.jpg")
     

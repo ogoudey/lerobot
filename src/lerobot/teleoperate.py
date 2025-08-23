@@ -88,6 +88,8 @@ from lerobot.utils.utils import init_logging, move_cursor_up
 from lerobot.utils.visualization_utils import _init_rerun, log_rerun_data
 
 import cv2
+from threading import Thread
+import PIL
 
 @dataclass
 class TeleoperateConfig:
@@ -112,8 +114,7 @@ def rot_z(a):
                      [s, c, 0],
                      [0, 0, 1]])
 
-from threading import Thread
-import PIL
+
 
 class CameraReader(Thread):
     def __init__(self, cap):
@@ -138,7 +139,7 @@ class CameraReader(Thread):
                 #print("Grab?", self.cap.grab())
                 #print("\rUpdated frame x", self.frame_updates, end="\n")
             else:
-                print("\rNo ret", ret, end="")
+                logging.warn("\rNo ret", ret, end="")
             """
             if self.cap.grab():
                 ret, frame = self.cap.retrieve()
@@ -182,8 +183,6 @@ def teleop_loop(
 
         webcam1_cap = cv2.VideoCapture(video_streams[0])
         webcam2_cap = cv2.VideoCapture(video_streams[1])
-
-        # 2️⃣ Start a reader thread for each webcam
         webcam1_reader = CameraReader(webcam1_cap)
         webcam2_reader = CameraReader(webcam2_cap)
         webcam1_reader.start()
@@ -203,18 +202,7 @@ def teleop_loop(
             loop_start = time.perf_counter()
             
             observation = robot.get_observation()
-        
-            #webcam1_frame = webcam1_reader.frame
-            #webcam2_frame = webcam2_reader.frame   # we do this later
-            #laptop_frame = rgb_frame_from_cap(laptop_cap)
-            """
-            if webcam1_frame is None or webcam2_frame is None:
-                print("\rFrame not ready, waiting...", end="")
-                time.sleep(0.005)  # tiny sleep
-                continue
-            else:
-                print("\rRetrieving frames...", end="")
-            """
+            
             action = teleop.get_action()
             
             if display_data:
@@ -225,12 +213,11 @@ def teleop_loop(
                 target_ee_pos = np.array([action["x"], action["y"], action["z"]])
                 calculated_ee_pos[:3, 3] = target_ee_pos
                 # Now affect R
-                if True:
-                    target_pitch = np.deg2rad(action["pitch"])   # in degrees
-                    target_roll = np.deg2rad(action["roll"])
-                    R_new = rot_y(target_pitch) @ rot_z(target_roll)
+                target_pitch = np.deg2rad(action["pitch"])   # in degrees
+                target_roll = np.deg2rad(action["roll"])
+                R_new = rot_y(target_pitch) @ rot_z(target_roll)
 
-                    calculated_ee_pos[:3, :3] = R_new
+                calculated_ee_pos[:3, :3] = R_new
                 
                 calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_ee_pos, position_weight, orientation_weight)
                 target_gripper = action["gripper"]
@@ -239,7 +226,7 @@ def teleop_loop(
             robot.send_action(action) # comment for mock?
             
             if dataset is not None:
-                #print(np.mean(webcam1_frame), np.mean(webcam2_frame))
+
                 dataset.add_frame(
                     frame={
                         "observation.state": np.array(initial_joints_deg, dtype=np.float32),   # robot state
@@ -255,12 +242,12 @@ def teleop_loop(
 
             loop_s = time.perf_counter() - loop_start
             if verbose:
-                print("\n" + "-" * (display_len + 10))
+                logging.info("\n" + "-" * (display_len + 10))
 
                 for motor, value in action.items():
-                    print(f"{motor:<{display_len}} | {value:>7.2f}")
+                    logging.info(f"{motor:<{display_len}} | {value:>7.2f}")
 
-                print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
+                logging.info(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
                 move_cursor_up(len(action) + 10)
             if duration is not None and time.perf_counter() - start >= duration:
                 return
@@ -271,18 +258,16 @@ def teleop_loop(
         webcam2_reader.join()
         webcam1_cap.release()
         webcam2_cap.release()
-        print("Web cams ended cleanly...")
+        logging.info("Web cams ended cleanly...")
         #laptop_cap.release()
         raise KeyboardInterrupt
         
 def test_record_loop(dataset):
     webcam1_cap = cv2.VideoCapture(0)
     
-
-    # 2️⃣ Start a reader thread for each webcam
     webcam1_reader = CameraReader(webcam1_cap)
     webcam1_reader.start()
-    print("Waiting...")
+    logging.info("Waiting...")
     time.sleep(3)
     for i in range(0, 30):
         start=time.perf_counter()
@@ -296,7 +281,7 @@ def test_record_loop(dataset):
             task="test",        # or whatever
             #timestamp=time.perf_counter() - start,
         )
-        print("step")
+        logging.info("step")
         time.sleep(0.1)
     webcam1_reader.stop()
     webcam1_reader.join()
