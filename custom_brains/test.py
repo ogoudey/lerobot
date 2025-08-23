@@ -66,32 +66,7 @@ from lerobot.utils.robot_utils import busy_wait
 from lerobot.utils.utils import init_logging, move_cursor_up
 from lerobot.utils.visualization_utils import _init_rerun, log_rerun_data
 
-
 logger = logging.getLogger(__name__)
-
-def teleoperate(cfg: TeleoperateConfig):
-    init_logging()
-    logging.info(pformat(asdict(cfg)))
-    if cfg.display_data:
-        _init_rerun(session_name="teleoperation")
-
-    teleop = make_teleoperator_from_config(cfg.teleop)
-    robot = make_robot_from_config(cfg.robot)
-
-    teleop.connect()
-    robot.connect()
-
-
-    try:
-        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
-    except KeyboardInterrupt:
-        print("Exiting!")
-        pass
-    finally:
-        if cfg.display_data:
-            rr.rerun_shutdown()
-        teleop.disconnect()
-        robot.disconnect()
 
 def record_dataset():
     t_cfg = teleop_config()
@@ -197,108 +172,6 @@ def record_dataset():
             rr.rerun_shutdown()
         teleop.disconnect()
         robot.disconnect()
-  
-      
-
-def dummy_dataset():
-    """ Used for verifying the format of datasets. """
-    robot_motors_ft = {f"{motor}.pos": float for motor in ["A", "B", "C", "D", "E", "F"]}
-    webcam1_image_shape = probe_shape("https://192.168.0.151:8080/shot.jpg")
-    robot_observation_features = {
-        **robot_motors_ft,
-        "side": webcam1_image_shape,
-        #"observation/images/front": laptop_image_shape,
-    }   # overriding property of so101
-    
-    
-
-    action_features = hw_to_dataset_features(robot_motors_ft, "action", use_video=True)
-    obs_features = hw_to_dataset_features(robot_observation_features, "observation", use_video=True)
-    dataset_features = {**action_features, **obs_features}
-
-    dataset = LeRobotDataset.create(
-        repo_id="/datasets",
-        fps=30,
-        root=Path('./data' + str(random.randint(0, 100))),
-        robot_type="my_robot",
-        features=dataset_features,
-        use_videos=True,
-        image_writer_processes=2,
-        image_writer_threads=2 * 1,
-        batch_encoding_size=16,
-    )
-    test_record_loop(dataset)
-    dataset.save_episode()
-    
-
-
-def probe_shape(url):
-    """ Helper function to get the dimensions of images """
-    cap = cv2.VideoCapture(url)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    if not cap.isOpened():
-        raise RuntimeError("Cannot open IP webcam stream")
-
-    ret, frame = cap.read()
-    if not ret:
-        raise RuntimeError("Failed to grab frame")
-    frame = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_AREA)
-    print("Frame:", frame.shape, frame.dtype)
-    cap.release()
-    
-    return frame.shape
-  
-def teleop_config():
-    """ Helper function to create a TeleoperateConfig """
-    robot_config = SO101FollowerConfig(
-        port="/dev/ttyACM0",
-        id="my_robot",
-        use_degrees=False,
-    )
-
-    follower = SO101Follower(robot_config)
-    follower.connect()
-
-    teleop_config = TeleoperateConfig(
-        robot = robot_config,
-        teleop = KeyboardEndEffectorTeleopConfig(
-            id="teleop1",
-            calibration_dir=Path("."),
-            mock=False,
-        ),
-        fps=30,
-        teleop_time_s=180.0,
-        display_data=False,
-        
-    )
-    return teleop_config 
-
-
-def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
-    """ Used for testing the web cam at a given url. """
-    import matplotlib.pyplot as plt
-    cap = cv2.VideoCapture(url)
-    if not cap.isOpened():
-        print("Failed to open IP webcam")
-        return
-    
-    ret, frame = cap.read()
-    cap.release()
-    if not ret:
-        print("Failed to grab frame")
-        return
-
-    # Convert BGR → RGB
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    plt.imshow(frame_rgb)
-    plt.axis("off")
-    plt.show()
-    input(".")
-
-
 
 def test_policy():
     """ Runs the SmolVLA policy at policy_path. Finicky, not working fully. """
@@ -359,9 +232,9 @@ def test_policy():
                     logging.info("Sending action")
                     robot.send_action(action)
                     dt_s = time.perf_counter() - start_loop_t
-                    busy_wait(1 / 15 - dt_s)
+                    busy_wait(1 / 15 - dt_s) # this is 1 / fps - dt_s
             except KeyboardInterrupt:
-                single_task=input("New task? (^C to Exit)\n")
+                single_task=input("New task? (^C to Exit)\n")   # whether this changes anything is unclear
     except KeyboardInterrupt:
         input("[hit Enter to catch me]\n") 
         for t in range(60, 0, -1):
@@ -370,6 +243,123 @@ def test_policy():
         logging.info("\rBye!      ") 
         robot.bus.disable_torque()
         robot.disconnect()
+
+def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
+    """ Used for testing the web cam at a given url. """
+    import matplotlib.pyplot as plt
+    cap = cv2.VideoCapture(url)
+    if not cap.isOpened():
+        print("Failed to open IP webcam")
+        return
+    
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        print("Failed to grab frame")
+        return
+
+    # Convert BGR → RGB
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    plt.imshow(frame_rgb)
+    plt.axis("off")
+    plt.show()
+    input(".")
+
+def dummy_dataset():
+    """ Used for verifying the format of datasets. """
+    robot_motors_ft = {f"{motor}.pos": float for motor in ["A", "B", "C", "D", "E", "F"]}
+    webcam1_image_shape = probe_shape("https://192.168.0.151:8080/shot.jpg")
+    robot_observation_features = {
+        **robot_motors_ft,
+        "side": webcam1_image_shape,
+        #"observation/images/front": laptop_image_shape,
+    }   # overriding property of so101
+
+    action_features = hw_to_dataset_features(robot_motors_ft, "action", use_video=True)
+    obs_features = hw_to_dataset_features(robot_observation_features, "observation", use_video=True)
+    dataset_features = {**action_features, **obs_features}
+
+    dataset = LeRobotDataset.create(
+        repo_id="/datasets",
+        fps=30,
+        root=Path('./data' + str(random.randint(0, 100))),
+        robot_type="my_robot",
+        features=dataset_features,
+        use_videos=True,
+        image_writer_processes=2,
+        image_writer_threads=2 * 1,
+        batch_encoding_size=16,
+    )
+    test_record_loop(dataset)
+    dataset.save_episode()
+
+def teleoperate(cfg: TeleoperateConfig):
+    """ Just teleoperate function """
+    init_logging()
+    logging.info(pformat(asdict(cfg)))
+    if cfg.display_data:
+        _init_rerun(session_name="teleoperation")
+
+    teleop = make_teleoperator_from_config(cfg.teleop)
+    robot = make_robot_from_config(cfg.robot)
+
+    teleop.connect()
+    robot.connect()
+
+    try:
+        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
+    except KeyboardInterrupt:
+        print("Exiting!")
+        pass
+    finally:
+        if cfg.display_data:
+            rr.rerun_shutdown()
+        teleop.disconnect()
+        robot.disconnect()
+
+def probe_shape(url):
+    """ Helper function to get the dimensions of images """
+    cap = cv2.VideoCapture(url)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    if not cap.isOpened():
+        raise RuntimeError("Cannot open IP webcam stream")
+
+    ret, frame = cap.read()
+    if not ret:
+        raise RuntimeError("Failed to grab frame")
+    frame = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_AREA)
+    print("Frame:", frame.shape, frame.dtype)
+    cap.release()
+    
+    return frame.shape
+  
+def teleop_config():
+    """ Helper function to create a TeleoperateConfig """
+    robot_config = SO101FollowerConfig(
+        port="/dev/ttyACM0",
+        id="my_robot",
+        use_degrees=False,
+    )
+
+    follower = SO101Follower(robot_config)
+    follower.connect()
+
+    teleop_config = TeleoperateConfig(
+        robot = robot_config,
+        teleop = KeyboardEndEffectorTeleopConfig(
+            id="teleop1",
+            calibration_dir=Path("."),
+            mock=False,
+        ),
+        fps=30,
+        teleop_time_s=180.0,
+        display_data=False,
+        
+    )
+    return teleop_config 
         
 def main():
     """ A repetoire of useful main functions: """
@@ -381,7 +371,6 @@ def main():
     #record_dataset()
     
     test_policy()
-
 
 if __name__ == "__main__":
     main()
