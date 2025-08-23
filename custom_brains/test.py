@@ -124,13 +124,12 @@ def record_dataset():
     
     try:
         robot.reset_position()
-        input("\nEnvironment set up?\n") # environment scenario updated manually
-        
+        task = input("\nWhat's the task name?\n")   # environment set up manually
         with VideoEncodingManager(dataset):
             while True:
                 logging.info("New episode starting... ^C when done or to stop.")
                 try:
-                    teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset) # send IPwebcam to teleop loop 
+                    teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset, task=task) # send IPwebcam to teleop loop 
           
                 except KeyboardInterrupt:
                     logging.info("Saving episode (out)")
@@ -138,7 +137,9 @@ def record_dataset():
                     logging.info("Saved episode (out)")
                 input("\nReset robot? (^C to exit)")
                 robot.reset_position() # use default start position
-                input("\nEnvironment set up? (^C to exit)") # environment scenario updated manually
+                new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
+                if new_task:
+                    task = new_task
     except KeyboardInterrupt:
     
         logging.info("\nExiting episode loop.")
@@ -213,12 +214,12 @@ def test_policy():
                     start_loop_t = time.perf_counter()
                     joint_state = robot.get_observation()
                     joints_deg = np.array([robot.present_pos[name.split(".pos")[0]] for name in robot.action_features])
-                    camera_1 = webcam1_reader.frame
-                    camera_2 = webcam2_reader.frame
+                    camera_1 = np.transpose(webcam1_reader.frame, (2, 0, 1))
+                    camera_2 = np.transpose(webcam2_reader.frame, (2, 0, 1))
                     observation_frame = {
                         "observation.state": np.array(joints_deg, dtype=np.float32),   # robot state
-                        "observation.images.front": webcam1_reader.frame,
-                        "observation.images.side": webcam2_reader.frame
+                        "observation.images.front": camera_1,
+                        "observation.images.side": camera_2,
                     }
                     action_values = predict_action(
                         observation_frame,
@@ -228,6 +229,7 @@ def test_policy():
                         task=single_task,
                         robot_type=robot.robot_type,
                     )
+                    logging.info(f"Gripper diff: {robot.present_pos['gripper.pos'] - action_values[5]}")
                     action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
                     logging.info("Sending action")
                     robot.send_action(action)

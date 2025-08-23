@@ -140,24 +140,13 @@ class CameraReader(Thread):
                 #print("\rUpdated frame x", self.frame_updates, end="\n")
             else:
                 logging.warn("\rNo ret", ret, end="")
-            """
-            if self.cap.grab():
-                ret, frame = self.cap.retrieve()
-                if ret:
-                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
-                    frame = rgb.astype(np.uint8, copy=False)
-                    self.frame = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_AREA).copy()
-                    self.frame_updates += 1
-                    print("Updated frame x", self.frame_updates)
-            """
             time.sleep(0.001)  # small sleep to yield CPU
 
     def stop(self):
         self.running = False
 
 def teleop_loop(
-    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_streams: list = [], dataset=None, verbose=False
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_streams: list = [], dataset=None, task, verbose=False
 ):
     try:    # for safely disposing of VideoCapture
         display_len = max(len(key) for key in robot.action_features)

@@ -432,7 +432,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         return actions
 
     @torch.no_grad()
-    def old_select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
         """Select a single action given environment observations.
 
         This method wraps `select_actions` in order to return one action at a time for execution in the
@@ -457,7 +457,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         return self._queues[ACTION].popleft()
         
     @torch.no_grad()
-    def select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def newselect_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
         """
         Added function.
         
@@ -585,7 +585,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         # Flip the joints.
         for motor_idx in [1, 2, 8, 9]:
             state[:, motor_idx] *= -1
-        # Reverse the gripper transformation that is being applied by the Aloha runtime.
+        # Reverse the                        transformation that is being applied by the Aloha runtime.
         for motor_idx in [6, 13]:
             state[:, motor_idx] = aloha_gripper_to_angular(state[:, motor_idx])
         return state
@@ -626,7 +626,7 @@ def pad_tensor(tensor, max_len, pad_value=0):
 
     Args:
         tensor (torch.Tensor): Shape (B, L, ...) or (B, L).
-        max_len (int): Fixed sequence length.
+        max_len (int): Fixed sequence length.           
         pad_value (int/float): Value for padding.
 
     Returns:

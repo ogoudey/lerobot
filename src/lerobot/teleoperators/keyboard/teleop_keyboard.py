@@ -347,6 +347,10 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             "gripper": 0.0,
         }
         
+        self.factor = 0.002
+        self.roll_pitch_factor = 1
+        self.gripper_factor = 1
+        
         
 
     @property
@@ -400,27 +404,24 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
 
         self._drain_pressed_keys()
         
-        factor = 0.002
-        roll_pitch_factor = 1
-        gripper_factor = 1
+        
 
         # Generate action based on current key states
         for key, val in self.current_pressed.items():
+            if not pressed:
+                continue
             if val and key in self.key_to_delta:
                 axis, direction = self.key_to_delta[key]
-                self.target_pos[axis] += direction * factor
+                self.target_pos[axis] += direction * self.factor
                 
                 # e.g. self.target_pos["roll"] += 1 * 0.005
             if val and key in self.key_to_orient:
                 axis, direction = self.key_to_orient[key]
-                self.target_pos[axis] += direction * roll_pitch_factor    
+                self.target_pos[axis] += direction * self.roll_pitch_factor    
             if val and key in self.key_gripper:
                 gripper, direction = self.key_gripper[key]
-                adjust = direction * gripper_factor
+                adjust = direction * self.gripper_factor
                 self.target_pos[gripper] += adjust
-                
-                
-        self.current_pressed.clear()
 
         return self.target_pos
 
