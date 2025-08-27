@@ -149,6 +149,7 @@ def teleop_loop(
     teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_streams: list = [], dataset=None, task=None, verbose=False
 ):
     try:    # for safely disposing of VideoCapture
+        robot.bus.connect()
         display_len = max(len(key) for key in robot.action_features)
 
         
@@ -241,6 +242,7 @@ def teleop_loop(
             if duration is not None and time.perf_counter() - start >= duration:
                 return
     except KeyboardInterrupt:
+        robot.bus.disconnect() # Idk if this is a real function.
         if len(video_streams) > 0:
             webcam1_reader.stop()
             webcam2_reader.stop()

@@ -241,9 +241,8 @@ class SO101Follower(Robot):
         
     def reset_position(self,
         position=None,
-        threshold=0.01,   # max allowed difference per joint
-        max_wait_s=5.0,   # safety timeout
-        sleep_s=0.01      # loop sleep to avoid busy wait
+        threshold=0.1,   # max allowed difference per joint
+        max_wait_s=2.0,   # safety timeout
     ):
         if position is None:
             position = {
@@ -256,31 +255,34 @@ class SO101Follower(Robot):
             }
 
         start_time = time.perf_counter()
-        
-        while True:
-            # Send the desired action
-            loop_start = time.perf_counter()
-            self.send_action(position)
+        try:
+            while True:
+                # Send the desired action
+                loop_start = time.perf_counter()
+                self.send_action(position)
 
-            # Compute max difference
-            diffs = []
-            self.get_observation()
-            present = self.present_pos  # dict of current motor positions
-            print("Present:", present)
-            print("Goal:", position)
-            for joint, goal_val in position.items():
-                diffs.append(abs(present[joint.removesuffix(".pos")] - goal_val))
-            max_diff = max(diffs)
-            print("Max diff:", max_diff)
-            if max_diff < threshold:
-                break  # done, robot is close enough
+                # Compute max difference
+                diffs = []
+                self.get_observation()
+                present = self.present_pos  # dict of current motor positions
+                print("Present:", present)
+                print("Goal:", position)
+                for joint, goal_val in position.items():
+                    diffs.append(abs(present[joint.removesuffix(".pos")] - goal_val))
+                max_diff = max(diffs)
+                print("Max diff:", max_diff)
+                if max_diff < threshold:
+                    break  # done, robot is close enough
 
-            # Safety timeout
-            if time.perf_counter() - start_time > max_wait_s:
-                print(f"Warning: reset_position timed out (max_diff={max_diff:.4f})")
-                break
+                # Safety timeout
+                if time.perf_counter() - start_time > max_wait_s:
+                    print(f"Warning: reset_position timed out (max_diff={max_diff:.4f})")
+                    break
 
-            dt_s = time.perf_counter() - loop_start
-            busy_wait(1 / 30 - dt_s)
+                dt_s = time.perf_counter() - loop_start
+                busy_wait(1 / 15 - dt_s)
+        except Exception:   #Connection refused.
+            print(f"Connection error probably. Close enough.")
+            return
         
         

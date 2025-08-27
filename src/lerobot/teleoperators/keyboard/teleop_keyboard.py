@@ -347,8 +347,8 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             "gripper": 0.0,
         }
         
-        self.factor = 0.001
-        self.roll_pitch_factor = 0.5
+        self.factor = 0.0015
+        self.roll_pitch_factor = 0.9
         self.gripper_factor = 1
         
         

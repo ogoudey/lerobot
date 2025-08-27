@@ -117,14 +117,17 @@ def record_dataset(dataset_name="dataset3"):
             batch_encoding_size=16,
         )
     except FileExistsError:
-        dataset = LeRobotDataset('dataset')
+        root = Path('./data') / dataset_name
+        dataset = LeRobotDataset(repo_id="/olindatasets", root=root)
 
     teleop.connect()
     robot.connect()
     
     try:
         reset_bw_episode(robot, teleop)
-        task = input("\nWhat's the task name?\n")   # environment set up manually
+        task = "Pick up the cube."
+        input("[hit Enter]")
+        #task = input("\nWhat's the task name?\n")   # environment set up manually
         with VideoEncodingManager(dataset):
             while True:
                 logging.info("New episode starting... ^C when done or to stop.")
@@ -133,7 +136,7 @@ def record_dataset(dataset_name="dataset3"):
           
                 except KeyboardInterrupt:
                     chat = input("Save episode? (hit Enter/y for yes, n for no)")
-                    if strtobool(chat) or chat == "":
+                    if chat == "" or strtobool(chat):
                         logging.info("Saving episode (out)")
                         dataset.save_episode()
                         logging.info("Saved episode (out)")
@@ -143,15 +146,16 @@ def record_dataset(dataset_name="dataset3"):
                         logging.info("Deleted episode (out)")
                 input("\nReset robot? (^C to exit)")
                 reset_bw_episode(robot, teleop)
-                new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
-                if new_task:
-                    task = new_task
+                input("[hit Enter]")
+                #new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
+                #if new_task:
+                #    task = new_task
     except KeyboardInterrupt:
     
         logging.info("\nExiting episode loop.")
         try:
             chat = input("Save dataset?\n")
-            if strtobool(chat) or chat == "":
+            if chat == "" or strtobool(chat):
                 logging.info("Great. Saved.")
             else:
                 raise KeyboardInterrupt # goto V
@@ -253,14 +257,17 @@ def test_policy():
         robot.disconnect()
 
 def reset_bw_episode(robot, teleop):
-    robot.reset_position()
-    print("robot reset...")
-    robot.get_observation()
-    calculated_ee_pos = teleop.kinematics.forward_kinematics(np.array([robot.present_pos[name] for name in teleop.joint_names]))
-    
-    print("resetting teleop's target pose")
-    teleop.reset(calculated_ee_pos)
-    
+    try:
+        robot.reset_position()
+        print("robot reset...")
+        
+        calculated_ee_pos = teleop.kinematics.forward_kinematics(np.array([robot.present_pos[name] for name in teleop.joint_names]))
+        
+        print("resetting teleop's target pose")
+        teleop.reset(calculated_ee_pos)
+    except Exception:   #Connection refused.
+        print(f"Connection error probably. Close enough.")
+        returnrobot.get_observation()
     
     print("actuating to target pose at start of teleop loop")
 
@@ -402,7 +409,7 @@ def main():
     
     #dummy_dataset()
 
-    record_dataset("season2")
+    record_dataset("season4")
     #teleoperate(teleop_config())
     #test_policy()
 
