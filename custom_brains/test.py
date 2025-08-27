@@ -68,7 +68,7 @@ from lerobot.utils.visualization_utils import _init_rerun, log_rerun_data
 
 logger = logging.getLogger(__name__)
 
-def record_dataset():
+def record_dataset(dataset_name="dataset3"):
     t_cfg = teleop_config()
 
     init_logging()
@@ -108,7 +108,7 @@ def record_dataset():
             repo_id="/olindatasets",
             fps=t_cfg.fps,
             #root=Path('./data' + str(random.randint(0, 100))),
-            root=Path('./dataset2'),
+            root=Path('./data/' + dataset_name),
             robot_type=robot.name,
             features=dataset_features,
             use_videos=True,
@@ -123,7 +123,7 @@ def record_dataset():
     robot.connect()
     
     try:
-        robot.reset_position()
+        reset_bw_episode(robot, teleop)
         task = input("\nWhat's the task name?\n")   # environment set up manually
         with VideoEncodingManager(dataset):
             while True:
@@ -132,11 +132,17 @@ def record_dataset():
                     teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset, task=task) # send IPwebcam to teleop loop 
           
                 except KeyboardInterrupt:
-                    logging.info("Saving episode (out)")
-                    dataset.save_episode()
-                    logging.info("Saved episode (out)")
+                    chat = input("Save episode? (hit Enter/y for yes, n for no)")
+                    if strtobool(chat) or chat == "":
+                        logging.info("Saving episode (out)")
+                        dataset.save_episode()
+                        logging.info("Saved episode (out)")
+                    else:
+                        logging.info("Deleting episode (out)")
+                        dataset.clear_episode_buffer()
+                        logging.info("Deleted episode (out)")
                 input("\nReset robot? (^C to exit)")
-                robot.reset_position() # use default start position
+                reset_bw_episode(robot, teleop)
                 new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
                 if new_task:
                     task = new_task
@@ -164,7 +170,7 @@ def record_dataset():
         
             
         for t in range(60, 0, -1):
-            logging.info(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
+            print(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
             time.sleep(0.05)
         logging.info("\rBye!      ") 
         
@@ -205,9 +211,9 @@ def test_policy():
     while webcam2_reader.frame is None:
         time.sleep(0.01)
     logging.info("Cameras on.")
-    robot.reset_position()
+    reset_bw_episode(robot, teleop)
     try:
-        single_task="Pick up the object"
+        single_task=input("Instruction:\n")
         while True:
             try:
                 while True:
@@ -240,11 +246,23 @@ def test_policy():
     except KeyboardInterrupt:
         input("[hit Enter to catch me]\n") 
         for t in range(60, 0, -1):
-            logging.info(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
+            print(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
             time.sleep(0.05)
         logging.info("\rBye!      ") 
         robot.bus.disable_torque()
         robot.disconnect()
+
+def reset_bw_episode(robot, teleop):
+    robot.reset_position()
+    print("robot reset...")
+    robot.get_observation()
+    calculated_ee_pos = teleop.kinematics.forward_kinematics(np.array([robot.present_pos[name] for name in teleop.joint_names]))
+    
+    print("resetting teleop's target pose")
+    teleop.reset(calculated_ee_pos)
+    
+    
+    print("actuating to target pose at start of teleop loop")
 
 def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
     """ Used for testing the web cam at a given url. """
@@ -296,6 +314,11 @@ def dummy_dataset():
     test_record_loop(dataset)
     dataset.save_episode()
 
+
+
+        
+        
+
 def teleoperate(cfg: TeleoperateConfig):
     """ Just teleoperate function """
     init_logging()
@@ -308,7 +331,16 @@ def teleoperate(cfg: TeleoperateConfig):
 
     teleop.connect()
     robot.connect()
-
+    robot.reset_position()
+    print("robot reset...")
+    robot.get_observation()
+    calculated_ee_pos = teleop.kinematics.forward_kinematics(np.array([robot.present_pos[name] for name in teleop.joint_names]))
+    
+    print("resetting teleop's target pose")
+    teleop.reset(calculated_ee_pos)
+    
+    
+    print("actuating to target pose")
     try:
         teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
     except KeyboardInterrupt:
@@ -370,8 +402,8 @@ def main():
     
     #dummy_dataset()
 
-    #record_dataset()
-    teleoperate(teleop_config())
+    record_dataset("season2")
+    #teleoperate(teleop_config())
     #test_policy()
 
 if __name__ == "__main__":

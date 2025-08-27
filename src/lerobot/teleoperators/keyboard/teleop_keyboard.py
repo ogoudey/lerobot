@@ -318,8 +318,8 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
         self.misc_keys_queue = Queue()
         
         self.key_to_delta = {
-            "i": ("x", -1),
-            "k": ("x", +1),
+            "i": ("x", +1),
+            "k": ("x", -1),
             "j": ("y", +1),
             "l": ("y", -1),
             "u": ("z", +1),
@@ -347,7 +347,7 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             "gripper": 0.0,
         }
         
-        self.factor = 0.0005
+        self.factor = 0.001
         self.roll_pitch_factor = 0.5
         self.gripper_factor = 1
         
@@ -386,11 +386,13 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             key = key.char
         self.event_queue.put((key, False))
 
-    def reset(self):
+    def reset(self, ee_pos):
+        init_fk = ee_pos[:3, 3]
+        print("3D pose:", init_fk)
         self.target_pos = {
-            "x": 0.2,
-            "y": 0,
-            "z": 0.2,
+            "x": init_fk[0],
+            "y": init_fk[0],
+            "z": init_fk[0],
             "roll": 0.0,
             "pitch": 90.0,
             "gripper": 0.0,

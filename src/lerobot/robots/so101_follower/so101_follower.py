@@ -26,6 +26,7 @@ from lerobot.motors.feetech import (
     FeetechMotorsBus,
     OperatingMode,
 )
+from lerobot.utils.robot_utils import busy_wait
 
 from ..robot import Robot
 from ..utils import ensure_safe_goal_position
@@ -239,14 +240,47 @@ class SO101Follower(Robot):
         logger.info(f"{self} disconnected.")
         
     def reset_position(self,
-        position={
-            "shoulder_pan.pos": 0.0,
-            "shoulder_lift.pos": 0.0,
-            "elbow_flex.pos": 0.0,
-            "wrist_flex.pos": 0.0,
-            "wrist_roll.pos": 0.0,
-            "gripper.pos": 0.0,
-        }
+        position=None,
+        threshold=0.01,   # max allowed difference per joint
+        max_wait_s=5.0,   # safety timeout
+        sleep_s=0.01      # loop sleep to avoid busy wait
     ):
-        self.send_action(position)
+        if position is None:
+            position = {
+                "shoulder_pan.pos": 0.0,
+                "shoulder_lift.pos": 0.0,
+                "elbow_flex.pos": 0.0,
+                "wrist_flex.pos": 0.0,
+                "wrist_roll.pos": 0.0,
+                "gripper.pos": 0.0,
+            }
+
+        start_time = time.perf_counter()
+        
+        while True:
+            # Send the desired action
+            loop_start = time.perf_counter()
+            self.send_action(position)
+
+            # Compute max difference
+            diffs = []
+            self.get_observation()
+            present = self.present_pos  # dict of current motor positions
+            print("Present:", present)
+            print("Goal:", position)
+            for joint, goal_val in position.items():
+                diffs.append(abs(present[joint.removesuffix(".pos")] - goal_val))
+            max_diff = max(diffs)
+            print("Max diff:", max_diff)
+            if max_diff < threshold:
+                break  # done, robot is close enough
+
+            # Safety timeout
+            if time.perf_counter() - start_time > max_wait_s:
+                print(f"Warning: reset_position timed out (max_diff={max_diff:.4f})")
+                break
+
+            dt_s = time.perf_counter() - loop_start
+            busy_wait(1 / 30 - dt_s)
+        
         

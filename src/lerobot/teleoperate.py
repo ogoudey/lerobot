@@ -139,7 +139,7 @@ class CameraReader(Thread):
                 #print("Grab?", self.cap.grab())
                 #print("\rUpdated frame x", self.frame_updates, end="\n")
             else:
-                logging.warn("\rNo ret", ret, end="")
+                print("\r Warning no retrieved frame yet:", ret, end="")
             time.sleep(0.001)  # small sleep to yield CPU
 
     def stop(self):
