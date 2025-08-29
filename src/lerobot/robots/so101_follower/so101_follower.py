@@ -259,7 +259,7 @@ class SO101Follower(Robot):
             while True:
                 # Send the desired action
                 loop_start = time.perf_counter()
-                self.send_action(position)
+                
 
                 # Compute max difference
                 diffs = []
@@ -271,18 +271,30 @@ class SO101Follower(Robot):
                     diffs.append(abs(present[joint.removesuffix(".pos")] - goal_val))
                 max_diff = max(diffs)
                 print("Max diff:", max_diff)
+                self.send_action(position)
                 if max_diff < threshold:
                     break  # done, robot is close enough
-
+                
                 # Safety timeout
                 if time.perf_counter() - start_time > max_wait_s:
                     print(f"Warning: reset_position timed out (max_diff={max_diff:.4f})")
                     break
-
+                
                 dt_s = time.perf_counter() - loop_start
                 busy_wait(1 / 15 - dt_s)
-        except Exception:   #Connection refused.
-            print(f"Connection error probably. Close enough.")
-            return
+        finally:
+            self.bus.disconnect(disable_torque=False)
+            try:
+                self.bus.connect()
+            except RuntimeError as e:
+                print(e)
+                print("Trying to recover. Catch me (1 second).")
+                time.sleep(1)
+                self.disconnect()
+                time.sleep(1)
+                self.connect()
+                print("Reconnected.")
+                
+                
         
         

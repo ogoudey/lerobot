@@ -105,10 +105,10 @@ def record_dataset(dataset_name="dataset3"):
 
     try:
         dataset = LeRobotDataset.create(
-            repo_id="/olindatasets",
+            repo_id="olindatasets",
             fps=t_cfg.fps,
             #root=Path('./data' + str(random.randint(0, 100))),
-            root=Path('./data/' + dataset_name),
+            root=Path('./data/' + dataset_name + str(random.randint(0, 1000))),
             robot_type=robot.name,
             features=dataset_features,
             use_videos=True,
@@ -124,7 +124,7 @@ def record_dataset(dataset_name="dataset3"):
     robot.connect()
     
     try:
-        reset_bw_episode(robot, teleop)
+        robot = reset_bw_episode(robot, teleop)
         task = "Pick up the cube."
         input("[hit Enter]")
         #task = input("\nWhat's the task name?\n")   # environment set up manually
@@ -145,11 +145,12 @@ def record_dataset(dataset_name="dataset3"):
                         dataset.clear_episode_buffer()
                         logging.info("Deleted episode (out)")
                 input("\nReset robot? (^C to exit)")
-                reset_bw_episode(robot, teleop)
+                robot = reset_bw_episode(robot, teleop)
                 input("[hit Enter]")
                 #new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
                 #if new_task:
                 #    task = new_task
+                
     except KeyboardInterrupt:
     
         logging.info("\nExiting episode loop.")
@@ -215,7 +216,7 @@ def test_policy():
     while webcam2_reader.frame is None:
         time.sleep(0.01)
     logging.info("Cameras on.")
-    reset_bw_episode(robot, teleop)
+    robot = reset_bw_episode(robot, teleop)
     try:
         single_task=input("Instruction:\n")
         while True:
@@ -265,11 +266,18 @@ def reset_bw_episode(robot, teleop):
         
         print("resetting teleop's target pose")
         teleop.reset(calculated_ee_pos)
-    except Exception:   #Connection refused.
-        print(f"Connection error probably. Close enough.")
-        returnrobot.get_observation()
-    
-    print("actuating to target pose at start of teleop loop")
+
+        
+        print("actuating to target pose at start of teleop loop")
+        return robot
+    except RuntimeError as e:
+        print("Robot connection error?:", e)
+        print("Reconnecting... (Catch me!)")
+        time.sleep(1)
+        robot.disconnect()
+        robot = make_robot_from_config(t_cfg.robot)
+        robot.connect()
+        return robot
 
 def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
     """ Used for testing the web cam at a given url. """
@@ -337,7 +345,6 @@ def teleoperate(cfg: TeleoperateConfig):
     robot = make_robot_from_config(cfg.robot)
 
     teleop.connect()
-    robot.connect()
     robot.reset_position()
     print("robot reset...")
     robot.get_observation()
@@ -367,8 +374,10 @@ def probe_shape(url):
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     if not cap.isOpened():
         raise RuntimeError("Cannot open IP webcam stream")
-
+    print("Giving camera time...")
+    time.sleep(1)
     ret, frame = cap.read()
+    
     if not ret:
         raise RuntimeError("Failed to grab frame")
     frame = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_AREA)
@@ -409,7 +418,7 @@ def main():
     
     #dummy_dataset()
 
-    record_dataset("season4")
+    record_dataset("seasonx")
     #teleoperate(teleop_config())
     #test_policy()
 

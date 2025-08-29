@@ -148,8 +148,10 @@ class CameraReader(Thread):
 def teleop_loop(
     teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, video_streams: list = [], dataset=None, task=None, verbose=False
 ):
-    try:    # for safely disposing of VideoCapture
+    if not robot.bus.is_connected:
         robot.bus.connect()
+    try:    # for safely disposing of VideoCapture
+
         display_len = max(len(key) for key in robot.action_features)
 
         
@@ -178,9 +180,12 @@ def teleop_loop(
             webcam1_reader.start()
             webcam2_reader.start()
             #laptop_cap = cv2.VideoCapture(0)
-
+            
+            
             if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
-                raise RuntimeError("Cannot open IP webcam")
+                time.sleep(1)
+                if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
+                    raise RuntimeError("Cannot open IP webcam")
                
             while webcam1_reader.frame is None:
                 time.sleep(0.01)
@@ -242,7 +247,7 @@ def teleop_loop(
             if duration is not None and time.perf_counter() - start >= duration:
                 return
     except KeyboardInterrupt:
-        robot.bus.disconnect() # Idk if this is a real function.
+
         if len(video_streams) > 0:
             webcam1_reader.stop()
             webcam2_reader.stop()
