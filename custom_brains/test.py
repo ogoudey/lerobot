@@ -188,7 +188,7 @@ def record_dataset(dataset_name="dataset3"):
 def test_policy():
     """ Runs the SmolVLA policy at policy_path. Finicky, not working fully. """
     
-    policy_path = "/home/olin/Robotics/Projects/LeRobot-Projects/lerobot/outputs/train/2025-08-18/13-40-25_smolvla/checkpoints/last/pretrained_model"
+    policy_path = "/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-08-29/10-17-18_smolvla/checkpoints/last/pretrained_model"
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
         id="my_robot",
@@ -197,7 +197,7 @@ def test_policy():
     robot = SO101Follower(robot_config)
     robot.connect()
     
-    smolvla_policy = SmolVLAPolicy.from_pretrained()
+    smolvla_policy = SmolVLAPolicy.from_pretrained(policy_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     logging.info("Policy made.")
@@ -209,6 +209,7 @@ def test_policy():
     webcam2_reader = CameraReader(webcam2_cap)
     webcam1_reader.start()
     webcam2_reader.start()
+    time.sleep(1)
     if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
         raise RuntimeError("Cannot open IP webcam") 
     while webcam1_reader.frame is None:
@@ -216,17 +217,21 @@ def test_policy():
     while webcam2_reader.frame is None:
         time.sleep(0.01)
     logging.info("Cameras on.")
-    robot = reset_bw_episode(robot, teleop)
+    robot = reset_bw_episode(robot, None)
     try:
         single_task=input("Instruction:\n")
         while True:
             try:
                 while True:
                     start_loop_t = time.perf_counter()
-                    joint_state = robot.get_observation()
+                    robot.get_observation()
+                    printable_state = {name: round(robot.present_pos[name.split(".pos")[0]], 3) for i, name in enumerate(robot.action_features)}
+                    print("STATE:  ", printable_state)
                     joints_deg = np.array([robot.present_pos[name.split(".pos")[0]] for name in robot.action_features])
                     camera_1 = np.transpose(webcam1_reader.frame, (2, 0, 1))
                     camera_2 = np.transpose(webcam2_reader.frame, (2, 0, 1))
+                    camera_1 = webcam1_reader.frame
+                    camera_2 = webcam2_reader.frame
                     observation_frame = {
                         "observation.state": np.array(joints_deg, dtype=np.float32),   # robot state
                         "observation.images.front": camera_1,
@@ -240,14 +245,18 @@ def test_policy():
                         task=single_task,
                         robot_type=robot.robot_type,
                     )
-                    logging.info(f"Gripper diff: {robot.present_pos['gripper.pos'] - action_values[5]}")
+
+                    
+                    #logging.info(f"Gripper diff: {robot.present_pos['gripper.pos'] - action_values[5]}")
                     action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
-                    logging.info("Sending action")
+                    printable_action = {key: round(action_values[i].item(), 3) for i, key in enumerate(robot.action_features)}
+                    print("ACTION: ", printable_action)
                     robot.send_action(action)
                     dt_s = time.perf_counter() - start_loop_t
-                    busy_wait(1 / 15 - dt_s) # this is 1 / fps - dt_s
+                    busy_wait(1 / 4 - dt_s) # this is 1 / fps - dt_s
             except KeyboardInterrupt:
                 single_task=input("New task? (^C to Exit)\n")   # whether this changes anything is unclear
+                robot = reset_bw_episode(robot, None)
     except KeyboardInterrupt:
         input("[hit Enter to catch me]\n") 
         for t in range(60, 0, -1):
@@ -262,20 +271,21 @@ def reset_bw_episode(robot, teleop):
         robot.reset_position()
         print("robot reset...")
         
-        calculated_ee_pos = teleop.kinematics.forward_kinematics(np.array([robot.present_pos[name] for name in teleop.joint_names]))
         
-        print("resetting teleop's target pose")
-        teleop.reset(calculated_ee_pos)
+        if teleop:
+            calculated_ee_pos = teleop.kinematics.forward_kinematics(np.array([robot.present_pos[name] for name in teleop.joint_names]))
+            print("resetting teleop's target pose")
+            teleop.reset(calculated_ee_pos)
 
-        
-        print("actuating to target pose at start of teleop loop")
+            
+            print("actuating to target pose at start of teleop loop")
         return robot
     except RuntimeError as e:
         print("Robot connection error?:", e)
         print("Reconnecting... (Catch me!)")
         time.sleep(1)
         robot.disconnect()
-        robot = make_robot_from_config(t_cfg.robot)
+        robot = make_robot_from_config(teleop_config().robot)
         robot.connect()
         return robot
 
@@ -418,9 +428,9 @@ def main():
     
     #dummy_dataset()
 
-    record_dataset("seasonx")
+    #record_dataset("seasonx")
     #teleoperate(teleop_config())
-    #test_policy()
+    test_policy()
 
 if __name__ == "__main__":
     main()
