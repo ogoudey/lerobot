@@ -125,31 +125,40 @@ def record_dataset(dataset_name="dataset3"):
     
     try:
         robot = reset_bw_episode(robot, teleop)
-        task = "Pick up the cube."
+        task = "Put the cube in the bowl"
         input("[hit Enter]")
         #task = input("\nWhat's the task name?\n")   # environment set up manually
         with VideoEncodingManager(dataset):
             while True:
                 logging.info("New episode starting... ^C when done or to stop.")
                 try:
-                    teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset, task=task) # send IPwebcam to teleop loop 
-          
-                except KeyboardInterrupt:
-                    chat = input("Save episode? (hit Enter/y for yes, n for no)")
-                    if chat == "" or strtobool(chat):
-                        logging.info("Saving episode (out)")
-                        dataset.save_episode()
-                        logging.info("Saved episode (out)")
-                    else:
-                        logging.info("Deleting episode (out)")
-                        dataset.clear_episode_buffer()
-                        logging.info("Deleted episode (out)")
-                input("\nReset robot? (^C to exit)")
-                robot = reset_bw_episode(robot, teleop)
-                input("[hit Enter]")
-                #new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
-                #if new_task:
-                #    task = new_task
+                    try:
+                        teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset, task=task) # send IPwebcam to teleop loop 
+              
+                    except KeyboardInterrupt:
+                        chat = input("Save episode? (hit Enter/y for yes, n for no)")
+                        if chat == "" or strtobool(chat):
+                            logging.info("Saving episode (out)")
+                            dataset.save_episode()
+                            logging.info("Saved episode (out)")
+                        else:
+                            logging.info("Deleting episode (out)")
+                            dataset.clear_episode_buffer()
+                            logging.info("Deleted episode (out)")
+                    input("\nReset robot? (^C to exit)")
+                    robot = reset_bw_episode(robot, teleop)
+                    input("[hit Enter]")
+                    #new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
+                    #if new_task:
+                    #    task = new_task
+                except Exception:
+                    print("Robot connection error?:", e)
+                    print("Reconnecting... (Catch me!)")
+                    time.sleep(1)
+                    robot.disconnect()
+                    robot = make_robot_from_config(t_cfg.robot)
+                    robot.connect()
+                    continue
                 
     except KeyboardInterrupt:
     
@@ -163,7 +172,8 @@ def record_dataset(dataset_name="dataset3"):
         except KeyboardInterrupt:
             logging.info("\nDeleting dataset...")
             # Remove temporary files
-            if strtobool(input("Are you sure you want to delete?!")):
+            chat = input("Are you sure you want to delete?!")
+            if chat == "" or strtobool(chat):
                 dataset.clear_episode_buffer() 
                 if dataset.root and os.path.exists(dataset.root):
                     shutil.rmtree(dataset.root)
@@ -395,7 +405,136 @@ def probe_shape(url):
     cap.release()
     
     return frame.shape
-  
+ 
+import json
+import shutil
+from pathlib import Path
+
+def merge_datasets(out_dir, *dataset_dirs):
+    out_dir = Path(out_dir)
+    (out_dir / "data").mkdir(parents=True, exist_ok=True)
+    (out_dir / "videos").mkdir(parents=True, exist_ok=True)
+    (out_dir / "meta").mkdir(parents=True, exist_ok=True)
+
+    # merged metadata
+    merged_episodes = []
+    merged_stats = []
+    merged_tasks = [{"task_index": 0, "task": "Put the cube in the bowl"}]
+    global_episode_index_episodes = 0
+    global_episode_index_stats = 0
+
+    chunk_data_dir = out_dir / "data" / "chunk-000"
+    chunk_video_dir = out_dir / "videos" / "chunk-000"
+    chunk_data_dir.mkdir(parents=True, exist_ok=True)
+    chunk_video_dir.mkdir(parents=True, exist_ok=True)
+
+    for d in dataset_dirs:
+        d = Path(d)
+
+        # copy data/video chunks
+        for kind, target_dir in [("data", chunk_data_dir), ("videos", chunk_video_dir)]:
+            for chunk in sorted((d / kind).glob("chunk-*")):
+                for subdir in chunk.iterdir():
+                    dest = target_dir / subdir.name
+                    if subdir.is_dir():
+                        # recursively copy the camera folder with all its files
+                        shutil.copytree(subdir, dest, dirs_exist_ok=True)
+                    else:
+                        shutil.copy(subdir, dest)
+
+        # load and update metadata
+        with open(d / "meta" / "episodes.jsonl") as f:
+            print("Copying data from", d)
+            for line in f:
+                ep = json.loads(line)
+                ep["episode_index"] = global_episode_index_episodes
+                merged_episodes.append(ep)
+                global_episode_index_episodes += 1
+
+        with open(d / "meta" / "episodes_stats.jsonl") as f:
+            for line in f:
+                stat = json.loads(line)
+                stat["episode_index"] = global_episode_index_stats
+                merged_stats.append(stat)
+                global_episode_index_stats += 1
+
+    # write merged metadata
+    with open(out_dir / "meta/episodes.jsonl", "w") as f:
+        for ep in merged_episodes:
+            f.write(json.dumps(ep) + "\n")
+
+    with open(out_dir / "meta/episodes_stats.jsonl", "w") as f:
+        for stat in merged_stats:
+            f.write(json.dumps(stat) + "\n")
+
+    with open(out_dir / "meta/tasks.jsonl", "w") as f:
+        for task in merged_tasks:
+            f.write(json.dumps(task) + "\n")
+
+    # generate merged info.json
+    info = {
+        "codebase_version": "v2.1",
+        "robot_type": "so101_follower",
+        "total_episodes": len(merged_episodes),
+        "total_frames": sum(ep["length"] for ep in merged_episodes),
+        "total_tasks": len(merged_tasks),
+        "total_videos": len(merged_episodes) * 2,  # adjust if you have more/less videos per episode
+        "total_chunks": 1,
+        "chunks_size": 1000,
+        "fps": 30,
+        "splits": {"train": f"0:{len(merged_episodes)}"},
+        "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+        "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
+    }
+
+    first_info_path = Path(dataset_dirs[0]) / "meta" / "info.json"
+    if first_info_path.exists():
+        with open(first_info_path) as f:
+            first_info = json.load(f)
+            info["features"] = first_info.get("features", {})
+
+    with open(out_dir / "meta/info.json", "w") as f:
+        json.dump(info, f, indent=4)
+
+def check_episode_stats(file_path, eps=1e-4):
+    """
+    Scan episodes_stats.jsonl for anomalies in std of actions and states.
+    eps: threshold below which std is considered suspiciously low.
+    """
+    file_path = Path(file_path)
+    anomalies = []
+
+    with open(file_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            ep_stat = json.loads(line)
+            ep_idx = ep_stat["episode_index"]
+            stats = ep_stat["stats"]
+
+            for key in ["action", "observation.state"]:
+                stat_std = stats.get(key, {}).get("std", None)
+                if stat_std is None:
+                    anomalies.append((ep_idx, key, "Missing std"))
+                    continue
+
+                # handle list of values
+                if isinstance(stat_std[0], list):
+                    std_values = np.array(stat_std).flatten()
+                else:
+                    std_values = np.array(stat_std)
+
+                if np.any(std_values <= eps):
+                    anomalies.append((ep_idx, key, std_values.tolist()))
+
+    if anomalies:
+        print(f"Found {len(anomalies)} anomalies:")
+        for ep_idx, key, std_vals in anomalies:
+            print(f"Episode {ep_idx}, field '{key}', std={std_vals}")
+    else:
+        print("No anomalies found.")
+ 
 def teleop_config():
     """ Helper function to create a TeleoperateConfig """
     robot_config = SO101FollowerConfig(
@@ -428,9 +567,11 @@ def main():
     
     #dummy_dataset()
 
-    #record_dataset("seasonx")
+    #merge_datasets("data/merged", "data/d1643",  "data/d1776",  "data/d2587", "data/d3168")
+    #check_episode_stats("data/merged/meta/episodes_stats.jsonl")
+    record_dataset("e")
     #teleoperate(teleop_config())
-    test_policy()
+    #test_policy()
 
 if __name__ == "__main__":
     main()
