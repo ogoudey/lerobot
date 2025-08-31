@@ -422,25 +422,36 @@ def merge_datasets(out_dir, *dataset_dirs):
     merged_tasks = [{"task_index": 0, "task": "Put the cube in the bowl"}]
     global_episode_index_episodes = 0
     global_episode_index_stats = 0
+    video_front_index = 0
+    video_side_index = 0
+    global_episode_index_data = 0
 
+    (front_dir := out_dir / "videos/chunk-000/observation.images.front").mkdir(parents=True, exist_ok=True)
+    (side_dir := out_dir / "videos/chunk-000/observation.images.side").mkdir(parents=True, exist_ok=True)
     chunk_data_dir = out_dir / "data" / "chunk-000"
-    chunk_video_dir = out_dir / "videos" / "chunk-000"
     chunk_data_dir.mkdir(parents=True, exist_ok=True)
-    chunk_video_dir.mkdir(parents=True, exist_ok=True)
 
     for d in dataset_dirs:
         d = Path(d)
+        data_chunk = d / "data/chunk-000"
+        video_chunk = d / "videos/chunk-000"
+        
+        for episode_file in sorted(data_chunk.glob("episode_*.parquet")):
+            new_data_name = f"episode_{global_episode_index_data:06d}.parquet"
+            shutil.copy(episode_file, out_dir / "data/chunk-000" / new_data_name)
+            global_episode_index_data += 1
 
-        # copy data/video chunks
-        for kind, target_dir in [("data", chunk_data_dir), ("videos", chunk_video_dir)]:
-            for chunk in sorted((d / kind).glob("chunk-*")):
-                for subdir in chunk.iterdir():
-                    dest = target_dir / subdir.name
-                    if subdir.is_dir():
-                        # recursively copy the camera folder with all its files
-                        shutil.copytree(subdir, dest, dirs_exist_ok=True)
-                    else:
-                        shutil.copy(subdir, dest)
+        src_front_dir = video_chunk / "observation.images.front"
+        for video_file in sorted(src_front_dir.glob("episode_*.mp4")):
+            new_front_name = f"episode_{video_front_index:06d}.mp4"
+            shutil.copy(video_file, front_dir / new_front_name)
+            video_front_index += 1
+
+        src_side_dir = video_chunk / "observation.images.side"
+        for video_file in sorted(src_side_dir.glob("episode_*.mp4")):
+            new_side_name = f"episode_{video_side_index:06d}.mp4"
+            shutil.copy(video_file, side_dir / new_side_name)
+            video_side_index += 1
 
         # load and update metadata
         with open(d / "meta" / "episodes.jsonl") as f:
@@ -567,9 +578,9 @@ def main():
     
     #dummy_dataset()
 
-    #merge_datasets("data/merged", "data/d1643",  "data/d1776",  "data/d2587", "data/d3168")
+    merge_datasets("data/merged", "data/e752",  "data/e265")
     #check_episode_stats("data/merged/meta/episodes_stats.jsonl")
-    record_dataset("e")
+    #record_dataset("e")
     #teleoperate(teleop_config())
     #test_policy()
 
