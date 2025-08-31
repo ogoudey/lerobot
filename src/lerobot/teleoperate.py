@@ -197,7 +197,7 @@ def teleop_loop(
             loop_start = time.perf_counter()
             
             observation = robot.get_observation()
-            
+            joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])
             action = teleop.get_action()
             
             if display_data:
@@ -214,7 +214,7 @@ def teleop_loop(
 
                 calculated_ee_pos[:3, :3] = R_new
                 
-                calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(initial_joints_deg, calculated_ee_pos, position_weight, orientation_weight)
+                calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(joints_deg, calculated_ee_pos, position_weight, orientation_weight)
                 target_gripper = action["gripper"]
                 action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
                 action["gripper.pos"] = target_gripper
