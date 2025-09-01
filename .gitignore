@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+### HF Access token ###
+hf_access_token.txt
+
 ### Environments & Dependencies ###
 .env
 .venv
