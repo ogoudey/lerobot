@@ -523,7 +523,12 @@ class SmolVLAPolicy(PreTrainedPolicy):
         img_masks = []
         present_img_keys = [key for key in self.config.image_features if key in batch]
         missing_img_keys = [key for key in self.config.image_features if key not in batch]
-
+        
+        if len(missing_img_keys) > 0:
+            raise ValueError(
+                f"Missing images"
+            )
+        
         if len(present_img_keys) == 0:
             raise ValueError(
                 f"All image features are missing from the batch. At least one expected. (batch: {batch.keys()}) (image_features:{self.config.image_features})"

@@ -8,12 +8,17 @@ from dataclasses import asdict, dataclass
 from distutils.util import strtobool
 from pathlib import Path
 from pprint import pformat
+from threading import Thread
+import json
+import shutil
+from pathlib import Path
 
 # --- Third-party ---
 import cv2
 import numpy as np
 import rerun as rr
 import torch
+import PIL
 
 # --- LeRobot: robots ---
 from lerobot.robots import (
@@ -38,7 +43,6 @@ from lerobot.teleoperators.keyboard.configuration_keyboard import (
 # --- LeRobot: teleoperate ---
 from lerobot.teleoperate import (
     TeleoperateConfig,
-    CameraReader,
     teleop_loop,
     test_record_loop,
 )
@@ -81,59 +85,56 @@ def record_dataset(dataset_name="dataset3"):
     input("Start cameras... [hit Enter to continue]")
     webcam1_url = "rtsp://192.168.0.159:8080/h264_ulaw.sdp"
     webcam2_url = "rtsp://192.168.0.151:8080/h264_ulaw.sdp"
-    urls = [webcam1_url, webcam2_url]
-    try:
-        webcam1_image_shape = probe_shape(webcam1_url)
-        webcam2_image_shape = probe_shape(webcam2_url)
-        #laptop_image_shape = probe_shape(0)
-    except RuntimeError as e:
-        logging.info("Cannot connect to webcams...")
-        raise RuntimeError
-        webcam1_image_shape, webcam2_image_shape = (0), (0)
-    robot_observation_features = {
-        **robot._motors_ft,
-        "front": webcam1_image_shape,
-        "side": webcam2_image_shape,
-        #"observation/images/front": laptop_image_shape,
-    }   # overriding property of so101
+    webcam1_cap = cv2.VideoCapture(webcam1_url)
+    webcam2_cap = cv2.VideoCapture(webcam2_url)
+    camera1 = CameraReader(webcam1_cap)
+    camera2 = CameraReader(webcam2_cap)
+    cameras = [camera1, camera2]
+    print("Giving cameras some time...")
+    time.sleep(2)
+    if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
+        raise RuntimeError("Cannot open IP webcam") 
+    while webcam1_reader.frame is None:
+        time.sleep(0.01)
+    while webcam2_reader.frame is None:
+        time.sleep(0.01)
+    logging.info("Cameras on.")
+
+    webcam1_image_shape = webcam1_reader.frame.shape
+    webcam2_image_shape = webcam2_reader.frame.shape
+    print("Camera shapes:", webcam1_image_shape, webcam2_image_shape)
     
-    
+    robot.use_external_cameras = [webcam1_image_shape, webcam2_image_shape]  
 
     action_features = hw_to_dataset_features(robot.action_features, "action", use_video=True)
-    obs_features = hw_to_dataset_features(robot_observation_features, "observation", use_video=True)
+    obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_video=True)
     dataset_features = {**action_features, **obs_features}
-
-    try:
-        dataset = LeRobotDataset.create(
-            repo_id="olindatasets",
-            fps=t_cfg.fps,
-            #root=Path('./data' + str(random.randint(0, 100))),
-            root=Path('./data/' + dataset_name + str(random.randint(0, 1000))),
-            robot_type=robot.name,
-            features=dataset_features,
-            use_videos=True,
-            image_writer_processes=0,
-            image_writer_threads=4 * 2, # 2 times cameras
-            batch_encoding_size=16,
-        )
-    except FileExistsError:
-        root = Path('./data') / dataset_name
-        dataset = LeRobotDataset(repo_id="/olindatasets", root=root)
+    
+    dataset = LeRobotDataset.create(
+        repo_id="olindatasets",
+        fps=t_cfg.fps,
+        root=Path('./data/' + dataset_name + str(random.randint(0, 1000))),
+        robot_type=robot.name,
+        features=dataset_features,
+        use_videos=True,
+        image_writer_processes=0,
+        image_writer_threads=4 * 2,
+        batch_encoding_size=16,
+    )
 
     teleop.connect()
     robot.connect()
     
     try:
         robot = reset_bw_episode(robot, teleop)
-        task = "Put the cube in the bowl"
+        task = "Put the cube in the bowl" # preset for ease
         input("[hit Enter]")
-        #task = input("\nWhat's the task name?\n")   # environment set up manually
         with VideoEncodingManager(dataset):
             while True:
                 logging.info("New episode starting... ^C when done or to stop.")
                 try:
                     try:
-                        teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, video_streams=urls, dataset=dataset, task=task) # send IPwebcam to teleop loop 
+                        teleop_loop(teleop, robot, t_cfg.fps, display_data=t_cfg.display_data, duration=t_cfg.teleop_time_s, cameras=cameras, dataset=dataset, task=task) # send IPwebcam to teleop loop 
               
                     except KeyboardInterrupt:
                         chat = input("Save episode? (hit Enter/y for yes, n for no)")
@@ -197,8 +198,9 @@ def record_dataset(dataset_name="dataset3"):
 
 def test_policy():
     """ Runs the SmolVLA policy at policy_path. Finicky, not working fully. """
-    
-    policy_path = "/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-08-29/10-17-18_smolvla/checkpoints/last/pretrained_model"
+    _init_rerun(session_name="smolvla")
+    policy_path = "/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-08-31/16-47-19_smolvla/checkpoints/last/pretrained_model"
+    #policy_path = "lerobot/smolvla_base"
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
         id="my_robot",
@@ -219,7 +221,8 @@ def test_policy():
     webcam2_reader = CameraReader(webcam2_cap)
     webcam1_reader.start()
     webcam2_reader.start()
-    time.sleep(1)
+    print("Giving cameras time...")
+    time.sleep(2)
     if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
         raise RuntimeError("Cannot open IP webcam") 
     while webcam1_reader.frame is None:
@@ -227,6 +230,7 @@ def test_policy():
     while webcam2_reader.frame is None:
         time.sleep(0.01)
     logging.info("Cameras on.")
+    
     robot = reset_bw_episode(robot, None)
     try:
         single_task=input("Instruction:\n")
@@ -235,18 +239,17 @@ def test_policy():
                 while True:
                     start_loop_t = time.perf_counter()
                     robot.get_observation()
-                    printable_state = {name: round(robot.present_pos[name.split(".pos")[0]], 3) for i, name in enumerate(robot.action_features)}
+                    printable_state = {name: round(robot.present_pos[name.split(".pos")[0]], 6) for i, name in enumerate(robot.action_features)}
                     print("STATE:  ", printable_state)
-                    joints_deg = np.array([robot.present_pos[name.split(".pos")[0]] for name in robot.action_features])
-                    camera_1 = np.transpose(webcam1_reader.frame, (2, 0, 1))
-                    camera_2 = np.transpose(webcam2_reader.frame, (2, 0, 1))
-                    camera_1 = webcam1_reader.frame
-                    camera_2 = webcam2_reader.frame
+                    joints_deg = np.array([robot.present_pos[name.split(".pos")[0]] for name in robot.action_features], dtype=np.float32)
+                    frame1 = webcam1_reader.frame
+                    frame2 = webcam2_reader.frame
                     observation_frame = {
-                        "observation.state": np.array(joints_deg, dtype=np.float32),   # robot state
-                        "observation.images.front": camera_1,
-                        "observation.images.side": camera_2,
+                        "observation.state": joints_deg,   # robot state
+                        "observation.images.front": frame1,
+                        "observation.images.side": frame2,
                     }
+                    
                     action_values = predict_action(
                         observation_frame,
                         smolvla_policy,
@@ -259,20 +262,25 @@ def test_policy():
                     
                     #logging.info(f"Gripper diff: {robot.present_pos['gripper.pos'] - action_values[5]}")
                     action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
-                    printable_action = {key: round(action_values[i].item(), 3) for i, key in enumerate(robot.action_features)}
-                    print("ACTION: ", printable_action)
+
                     robot.send_action(action)
+                    log_rerun_data(observation_frame, action)
                     dt_s = time.perf_counter() - start_loop_t
-                    busy_wait(1 / 4 - dt_s) # this is 1 / fps - dt_s
+                    busy_wait(1 / 30 - dt_s) # this is 1 / fps - dt_s
             except KeyboardInterrupt:
                 single_task=input("New task? (^C to Exit)\n")   # whether this changes anything is unclear
                 robot = reset_bw_episode(robot, None)
+                smolvla_policy.reset()
     except KeyboardInterrupt:
+        webcam1_reader.stop()
+        webcam2_reader.stop()
+        webcam1_cap.release()
+        webcam2_cap.release()
         input("[hit Enter to catch me]\n") 
         for t in range(60, 0, -1):
             print(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
             time.sleep(0.05)
-        logging.info("\rBye!      ") 
+        logging.info("\rBye!      ")
         robot.bus.disable_torque()
         robot.disconnect()
 
@@ -313,7 +321,6 @@ def test_webcam(url="https://192.168.0.159:8080/shot.jpg"):
         print("Failed to grab frame")
         return
 
-    # Convert BGR → RGB
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     plt.imshow(frame_rgb)
@@ -328,7 +335,6 @@ def dummy_dataset():
     robot_observation_features = {
         **robot_motors_ft,
         "side": webcam1_image_shape,
-        #"observation/images/front": laptop_image_shape,
     }   # overriding property of so101
 
     action_features = hw_to_dataset_features(robot_motors_ft, "action", use_video=True)
@@ -348,11 +354,6 @@ def dummy_dataset():
     )
     test_record_loop(dataset)
     dataset.save_episode()
-
-
-
-        
-        
 
 def teleoperate(cfg: TeleoperateConfig):
     """ Just teleoperate function """
@@ -376,7 +377,7 @@ def teleoperate(cfg: TeleoperateConfig):
     
     print("actuating to target pose")
     try:
-        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
+        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s, (camera1, camera2)
     except KeyboardInterrupt:
         print("Exiting!")
         pass
@@ -387,7 +388,7 @@ def teleoperate(cfg: TeleoperateConfig):
         robot.disconnect()
 
 def probe_shape(url):
-    """ Helper function to get the dimensions of images """
+    """ Helper function to get the dimensions of images. No longer used """
     cap = cv2.VideoCapture(url)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
@@ -406,11 +407,10 @@ def probe_shape(url):
     
     return frame.shape
  
-import json
-import shutil
-from pathlib import Path
+
 
 def merge_datasets(out_dir, *dataset_dirs):
+    """ Used to combine two identically formatted datasets, likely because a recording session was interrupted. """
     out_dir = Path(out_dir)
     (out_dir / "data").mkdir(parents=True, exist_ok=True)
     (out_dir / "videos").mkdir(parents=True, exist_ok=True)
@@ -570,6 +570,40 @@ def teleop_config():
         
     )
     return teleop_config 
+
+class CameraReader(Thread):
+    """ Class that provides a .frame and updates it as a parallel thread. """
+    def __init__(self, cap):
+        super().__init__()
+        self.cap = cap
+        #self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 512)
+        #self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 512)
+        #self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+        #self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        self.frame = None
+        self.running = True
+        
+        self.frame_updates = 0
+
+    def run(self):
+        while self.running:
+            ret, frame = self.cap.read()
+            if ret:
+                #self.frame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (320, 240)).copy()
+                #self.frame = cv2.resize(frame, (320, 240)).copy()
+                #self.frame = cv2.resize(frame, (512, 512)).copy()
+                frame.copy()
+                self.frame_updates += 1
+                #print("Grab?", self.cap.grab())
+                #print("\rUpdated frame x", self.frame_updates, end="\n")
+            else:
+                print("\r Warning no retrieved frame yet...")
+            time.sleep(0.001)  # small sleep to yield CPU
+
+    def stop(self):
+        self.running = False
         
 def main():
     """ A repetoire of useful main functions: """
@@ -578,11 +612,11 @@ def main():
     
     #dummy_dataset()
 
-    merge_datasets("data/merged", "data/e752",  "data/e265")
-    #check_episode_stats("data/merged/meta/episodes_stats.jsonl")
+    #merge_datasets("data/merged", "data/e752",  "data/e265")
+    #check_episode_stats("data/50/meta/episodes_stats.jsonl")
     #record_dataset("e")
     #teleoperate(teleop_config())
-    #test_policy()
+    test_policy()
 
 if __name__ == "__main__":
     main()

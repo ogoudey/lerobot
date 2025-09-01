@@ -61,6 +61,8 @@ class SO101Follower(Robot):
         )
         self.cameras = make_cameras_from_configs(config.cameras)
         
+        self.external_cameras = []
+        
         self.present_pos = None
         
 
@@ -74,9 +76,16 @@ class SO101Follower(Robot):
             cam: (self.config.cameras[cam].height, self.config.cameras[cam].width, 3) for cam in self.cameras
         }
 
-    @cached_property # unused
+    @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
-        return {**self._motors_ft, **self._cameras_ft}
+        if len(self.external_cameras) == 2: # front and side
+            return {
+                **robot._motors_ft,
+                "front": external_cameras[0],
+                "side": external_cameras[1],
+            }
+        else: # preexisting in repo
+            return {**self._motors_ft, **self._cameras_ft}
         
 
     @cached_property
@@ -177,21 +186,27 @@ class SO101Follower(Robot):
         # Read arm position
         start = time.perf_counter()
         obs_dict = self.bus.sync_read("Present_Position")
+        """
+        print("Difference in read state:", end = " ")
+        if self.present_pos:
+            for motor, val in obs_dict.items():
+                print(self.present_pos[motor] - val, end=", ")
+        print("\n")
+        """
+
+
         
-        self.present_pos = obs_dict # Added by Olin
-        #print(f"\rRead from bus: {self.present_pos}")
+        self.present_pos = obs_dict
         obs_dict = {f"{motor}.pos": val for motor, val in obs_dict.items()}
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read state: {dt_ms:.1f}ms")
 
-        # Capture images from cameras
+        # Capture images from cameras (unused)
         for cam_key, cam in self.cameras.items():
             start = time.perf_counter()
             obs_dict[cam_key] = cam.async_read()
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
-
-    
         return obs_dict
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
@@ -208,7 +223,15 @@ class SO101Follower(Robot):
             the action sent to the motors, potentially clipped.
         """
         #logger.info(f"Action: {action.keys()}")
-        
+        """
+        # for debugging:
+        diffs = []
+        for joint, goal_val in action.items():
+            diffs.append(abs(self.present_pos[joint.removesuffix(".pos")] - goal_val))
+        max_diff = max(diffs)
+        print("Max diff to goal from present:", max_diff)
+        # end debugging
+        """
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
@@ -262,7 +285,7 @@ class SO101Follower(Robot):
                 # Send the desired action
                 loop_start = time.perf_counter()
                 
-
+                """
                 # Compute max difference
                 diffs = []
                 self.get_observation()
@@ -281,7 +304,7 @@ class SO101Follower(Robot):
                 if time.perf_counter() - start_time > max_wait_s:
                     print(f"Warning: reset_position timed out (max_diff={max_diff:.4f})")
                     break
-                
+                """
                 dt_s = time.perf_counter() - loop_start
                 busy_wait(1 / 15 - dt_s)
         finally:
