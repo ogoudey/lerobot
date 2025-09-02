@@ -87,16 +87,25 @@ def record_dataset(dataset_name="dataset3"):
     webcam2_url = "rtsp://192.168.0.151:8080/h264_ulaw.sdp"
     webcam1_cap = cv2.VideoCapture(webcam1_url)
     webcam2_cap = cv2.VideoCapture(webcam2_url)
-    camera1 = CameraReader(webcam1_cap)
-    camera2 = CameraReader(webcam2_cap)
-    cameras = [camera1, camera2]
+    webcam1_reader = CameraReader(webcam1_cap)
+    webcam2_reader = CameraReader(webcam2_cap)
+    webcam1_reader.start()
+    webcam2_reader.start()
+    cameras = [webcam1_reader, webcam2_reader]
     print("Giving cameras some time...")
     time.sleep(2)
     if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
+        time.sleep(1)
+        print("More time...")
+        if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
+            raise RuntimeError("Cannot open IP webcam")
+    if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
         raise RuntimeError("Cannot open IP webcam") 
     while webcam1_reader.frame is None:
+        print("\rWaiting... on camera1")
         time.sleep(0.01)
     while webcam2_reader.frame is None:
+        print("\rWaiting... on camera2")
         time.sleep(0.01)
     logging.info("Cameras on.")
 
@@ -104,7 +113,7 @@ def record_dataset(dataset_name="dataset3"):
     webcam2_image_shape = webcam2_reader.frame.shape
     print("Camera shapes:", webcam1_image_shape, webcam2_image_shape)
     
-    robot.use_external_cameras = [webcam1_image_shape, webcam2_image_shape]  
+    robot.external_cameras = [webcam1_image_shape, webcam2_image_shape]  
 
     action_features = hw_to_dataset_features(robot.action_features, "action", use_video=True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_video=True)
@@ -152,13 +161,14 @@ def record_dataset(dataset_name="dataset3"):
                     #new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
                     #if new_task:
                     #    task = new_task
-                except Exception:
+                except Exception as e:
                     print("Robot connection error?:", e)
                     print("Reconnecting... (Catch me!)")
                     time.sleep(1)
                     robot.disconnect()
                     robot = make_robot_from_config(t_cfg.robot)
                     robot.connect()
+                    input("Continue?")
                     continue
                 
     except KeyboardInterrupt:
@@ -181,7 +191,10 @@ def record_dataset(dataset_name="dataset3"):
                     logging.info(f"Deleted dataset at /{dataset.root}")       
         except KeyboardInterrupt:
             pass
-        # Safely quit
+        webcam1_reader.stop()
+        webcam2_reader.stop()
+        webcam1_cap.release()
+        webcam2_cap.release()
         input("[hit Enter to catch me]\n")
         
             
@@ -226,8 +239,10 @@ def test_policy():
     if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
         raise RuntimeError("Cannot open IP webcam") 
     while webcam1_reader.frame is None:
+        print("\rWaiting... on camera1")
         time.sleep(0.01)
     while webcam2_reader.frame is None:
+        print("\rWaiting... on camera2")
         time.sleep(0.01)
     logging.info("Cameras on.")
     
@@ -285,6 +300,7 @@ def test_policy():
         robot.disconnect()
 
 def reset_bw_episode(robot, teleop):
+    print("Resetting position")
     try:
         robot.reset_position()
         print("robot reset...")
@@ -377,7 +393,7 @@ def teleoperate(cfg: TeleoperateConfig):
     
     print("actuating to target pose")
     try:
-        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s, (camera1, camera2)
+        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s, cameras=(camera1, camera2))
     except KeyboardInterrupt:
         print("Exiting!")
         pass
@@ -594,12 +610,12 @@ class CameraReader(Thread):
                 #self.frame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (320, 240)).copy()
                 #self.frame = cv2.resize(frame, (320, 240)).copy()
                 #self.frame = cv2.resize(frame, (512, 512)).copy()
-                frame.copy()
+                self.frame = frame.copy()
                 self.frame_updates += 1
                 #print("Grab?", self.cap.grab())
                 #print("\rUpdated frame x", self.frame_updates, end="\n")
             else:
-                print("\r Warning no retrieved frame yet...")
+                print("\rNo retrieved frame yet...")
             time.sleep(0.001)  # small sleep to yield CPU
 
     def stop(self):
@@ -613,10 +629,13 @@ def main():
     #dummy_dataset()
 
     #merge_datasets("data/merged", "data/e752",  "data/e265")
-    #check_episode_stats("data/50/meta/episodes_stats.jsonl")
-    #record_dataset("e")
+    check_episode_stats("data/f5/meta/episodes_stats.jsonl")
+    
+    # I "outsource" the train script
+    
+    #record_dataset("f")
     #teleoperate(teleop_config())
-    test_policy()
+    #test_policy()
 
 if __name__ == "__main__":
     main()

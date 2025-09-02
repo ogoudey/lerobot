@@ -79,10 +79,11 @@ class SO101Follower(Robot):
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
         if len(self.external_cameras) == 2: # front and side
+            print("Adding external cameras to frame format")
             return {
-                **robot._motors_ft,
-                "front": external_cameras[0],
-                "side": external_cameras[1],
+                **self._motors_ft,
+                "front": self.external_cameras[0],
+                "side": self.external_cameras[1],
             }
         else: # preexisting in repo
             return {**self._motors_ft, **self._cameras_ft}
@@ -285,26 +286,29 @@ class SO101Follower(Robot):
                 # Send the desired action
                 loop_start = time.perf_counter()
                 
-                """
+                
                 # Compute max difference
                 diffs = []
                 self.get_observation()
                 present = self.present_pos  # dict of current motor positions
-                print("Present:", present)
-                print("Goal:", position)
+                #print("Present:", present)
+                #print("Goal:", position)
                 for joint, goal_val in position.items():
                     diffs.append(abs(present[joint.removesuffix(".pos")] - goal_val))
                 max_diff = max(diffs)
-                print("Max diff:", max_diff)
+                
                 self.send_action(position)
                 if max_diff < threshold:
+                    print("Max difference in joints:", max_diff)
                     break  # done, robot is close enough
                 
                 # Safety timeout
                 if time.perf_counter() - start_time > max_wait_s:
-                    print(f"Warning: reset_position timed out (max_diff={max_diff:.4f})")
+                    #print(f"Warning: reset_position timed out (max_diff={max_diff:.4f})")
+                    print("Max difference in joints:", max_diff)
                     break
-                """
+                
+                
                 dt_s = time.perf_counter() - loop_start
                 busy_wait(1 / 15 - dt_s)
         finally:
