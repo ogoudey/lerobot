@@ -209,10 +209,133 @@ def record_dataset(dataset_name="dataset3"):
         teleop.disconnect()
         robot.disconnect()
 
+def train():
+    pass
+    """
+    INFO 2025-09-03 11:10:15 ts/train.py:111 {'batch_size': 16,
+ 'dataset': {'episodes': None,
+             'image_transforms': {'enable': False,
+                                  'max_num_transforms': 3,
+                                  'random_order': False,
+                                  'tfs': {'brightness': {'kwargs': {'brightness': [0.8,
+                                                                                   1.2]},
+                                                         'type': 'ColorJitter',
+                                                         'weight': 1.0},
+                                          'contrast': {'kwargs': {'contrast': [0.8,
+                                                                               1.2]},
+                                                       'type': 'ColorJitter',
+                                                       'weight': 1.0},
+                                          'hue': {'kwargs': {'hue': [-0.05,
+                                                                     0.05]},
+                                                  'type': 'ColorJitter',
+                                                  'weight': 1.0},
+                                          'saturation': {'kwargs': {'saturation': [0.5,
+                                                                                   1.5]},
+                                                         'type': 'ColorJitter',
+                                                         'weight': 1.0},
+                                          'sharpness': {'kwargs': {'sharpness': [0.5,
+                                                                                 1.5]},
+                                                        'type': 'SharpnessJitter',
+                                                        'weight': 1.0}}},
+             'repo_id': '/home/olin/Robotics/Projects/LeRobot/lerobot/data/f5',
+             'revision': None,
+             'root': None,
+             'use_imagenet_stats': True,
+             'video_backend': 'torchcodec'},
+ 'env': None,
+ 'eval': {'batch_size': 50, 'n_episodes': 50, 'use_async_envs': False},
+ 'eval_freq': 20000,
+ 'job_name': 'smolvla',
+ 'log_freq': 200,
+ 'num_workers': 4,
+ 'optimizer': {'betas': [0.9, 0.95],
+               'eps': 1e-08,
+               'grad_clip_norm': 10.0,
+               'lr': 0.0001,
+               'type': 'adamw',
+               'weight_decay': 1e-10},
+ 'output_dir': 'outputs/train/2025-09-03/11-10-15_smolvla',
+ 'policy': {'adapt_to_pi_aloha': False,
+            'add_image_special_tokens': False,
+            'attention_mode': 'cross_attn',
+            'chunk_size': 50,
+            'device': 'cuda',
+            'empty_cameras': 0,
+            'expert_width_multiplier': 0.75,
+            'freeze_vision_encoder': True,
+            'input_features': {'observation.image': {'shape': [3, 256, 256],
+                                                     'type': <FeatureType.VISUAL: 'VISUAL'>},
+                               'observation.image2': {'shape': [3, 256, 256],
+                                                      'type': <FeatureType.VISUAL: 'VISUAL'>},
+                               'observation.image3': {'shape': [3, 256, 256],
+                                                      'type': <FeatureType.VISUAL: 'VISUAL'>},
+                               'observation.state': {'shape': [6],
+                                                     'type': <FeatureType.STATE: 'STATE'>}},
+            'license': None,
+            'load_vlm_weights': True,
+            'max_action_dim': 32,
+            'max_period': 4.0,
+            'max_state_dim': 32,
+            'min_period': 0.004,
+            'n_action_steps': 50,
+            'n_obs_steps': 1,
+            'normalization_mapping': {'ACTION': <NormalizationMode.MEAN_STD: 'MEAN_STD'>,
+                                      'STATE': <NormalizationMode.MEAN_STD: 'MEAN_STD'>,
+                                      'VISUAL': <NormalizationMode.IDENTITY: 'IDENTITY'>},
+            'num_expert_layers': 0,
+            'num_steps': 10,
+            'num_vlm_layers': 16,
+            'optimizer_betas': [0.9, 0.95],
+            'optimizer_eps': 1e-08,
+            'optimizer_grad_clip_norm': 10.0,
+            'optimizer_lr': 0.0001,
+            'optimizer_weight_decay': 1e-10,
+            'output_features': {'action': {'shape': [6],
+                                           'type': <FeatureType.ACTION: 'ACTION'>}},
+            'pad_language_to': 'max_length',
+            'prefix_length': 0,
+            'private': None,
+            'push_to_hub': True,
+            'repo_id': 'olingoudey/smolvla_finetuned_v2',
+            'resize_imgs_with_padding': [512, 512],
+            'scheduler_decay_lr': 2.5e-06,
+            'scheduler_decay_steps': 30000,
+            'scheduler_warmup_steps': 1000,
+            'self_attn_every_n_layers': 2,
+            'tags': None,
+            'tokenizer_max_length': 48,
+            'train_expert_only': True,
+            'train_state_proj': True,
+            'type': 'smolvla',
+            'use_amp': False,
+            'use_cache': True,
+            'use_delta_joint_actions_aloha': False,
+            'vlm_model_name': 'HuggingFaceTB/SmolVLM2-500M-Video-Instruct'},
+ 'resume': False,
+ 'save_checkpoint': True,
+ 'save_freq': 20000,
+ 'scheduler': {'decay_lr': 2.5e-06,
+               'num_decay_steps': 30000,
+               'num_warmup_steps': 1000,
+               'peak_lr': 0.0001,
+               'type': 'cosine_decay_with_warmup'},
+ 'seed': 1000,
+ 'steps': 10,
+ 'use_policy_training_preset': True,
+ 'wandb': {'disable_artifact': False,
+           'enable': False,
+           'entity': None,
+           'mode': None,
+           'notes': None,
+           'project': 'lerobot',
+           'run_id': None}}
+
+    """
+
 def test_policy():
     """ Runs the SmolVLA policy at policy_path. Finicky, not working fully. """
     _init_rerun(session_name="smolvla")
-    policy_path = "/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-08-31/16-47-19_smolvla/checkpoints/last/pretrained_model"
+    policy_path = "/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-02/11-51-54_smolvla/checkpoints/last/pretrained_model"
     #policy_path = "lerobot/smolvla_base"
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
@@ -236,6 +359,11 @@ def test_policy():
     webcam2_reader.start()
     print("Giving cameras time...")
     time.sleep(2)
+    if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
+        time.sleep(1)
+        print("More time...")
+        if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
+            raise RuntimeError("Cannot open IP webcam")
     if not webcam1_cap.isOpened() or not webcam2_cap.isOpened():
         raise RuntimeError("Cannot open IP webcam") 
     while webcam1_reader.frame is None:
@@ -262,7 +390,7 @@ def test_policy():
                     observation_frame = {
                         "observation.state": joints_deg,   # robot state
                         "observation.images.front": frame1,
-                        "observation.images.side": frame2,
+                        "observation.images.up": frame2,
                     }
                     
                     action_values = predict_action(
@@ -629,13 +757,13 @@ def main():
     #dummy_dataset()
 
     #merge_datasets("data/merged", "data/e752",  "data/e265")
-    check_episode_stats("data/f5/meta/episodes_stats.jsonl")
+    #check_episode_stats("data/f5/meta/episodes_stats.jsonl")
     
     # I "outsource" the train script
     
     #record_dataset("f")
     #teleoperate(teleop_config())
-    #test_policy()
+    test_policy()
 
 if __name__ == "__main__":
     main()
