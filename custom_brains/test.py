@@ -259,7 +259,7 @@ def record_dataset(dataset_name="dataset3"):
 def test_policy():
     """ Runs the SmolVLA policy at policy_path. Finicky, not working fully. """
     _init_rerun(session_name="smolvla")
-    policy_path = "/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-03/11-10-15_smolvla/checkpoints/last/pretrained_model"
+    policy_path = "/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-02/11-51-54_smolvla/checkpoints/last/pretrained_model"
     #policy_path = "lerobot/smolvla_base"
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
