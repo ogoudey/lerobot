@@ -405,9 +405,9 @@ class SmolVLAPolicy(PreTrainedPolicy):
         # Unpad actions
         original_action_dim = self.config.action_feature.shape[0]
         actions = actions[:, :, :original_action_dim]
-
+        print("    Action:", actions.cpu().numpy())
         actions = self.unnormalize_outputs({ACTION: actions})[ACTION]
-
+        print("Raw action:", actions.cpu().numpy())
         if self.config.adapt_to_pi_aloha:
             actions = self._pi_aloha_encode_actions(actions)
 
