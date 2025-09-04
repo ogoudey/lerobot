@@ -70,10 +70,6 @@ from lerobot.utils.robot_utils import busy_wait
 from lerobot.utils.utils import init_logging, move_cursor_up
 from lerobot.utils.visualization_utils import _init_rerun, log_rerun_data
 
-# --- LeRobot: train ---
-
-from config.train import TrainPipelineConfig
-
 # Assorted:
 import logging
 import time
@@ -114,7 +110,7 @@ from lerobot.utils.utils import (
 )
 from lerobot.utils.wandb_utils import WandBLogger
 
-from scripts.train import update_policy
+from lerobot.scripts.train import update_policy
 
 logger = logging.getLogger(__name__)
 
