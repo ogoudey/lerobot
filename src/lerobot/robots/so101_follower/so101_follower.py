@@ -82,8 +82,8 @@ class SO101Follower(Robot):
             print("Adding external cameras to frame format")
             return {
                 **self._motors_ft,
-                "front": self.external_cameras[0],
-                "side": self.external_cameras[1],
+                "side": self.external_cameras[0],
+                "up": self.external_cameras[1],
             }
         else: # preexisting in repo
             return {**self._motors_ft, **self._cameras_ft}

@@ -309,7 +309,7 @@ def test_policy():
                     frame2 = webcam2_reader.frame
                     observation_frame = {
                         "observation.state": joints_deg,   # robot state
-                        "observation.images.front": frame1,
+                        "observation.images.side": frame1,
                         "observation.images.up": frame2,
                     }
                     
@@ -486,12 +486,12 @@ def merge_datasets(out_dir, *dataset_dirs):
     merged_tasks = [{"task_index": 0, "task": "Put the cube in the bowl"}]
     global_episode_index_episodes = 0
     global_episode_index_stats = 0
-    video_front_index = 0
+    video_up_index = 0
     video_side_index = 0
     global_episode_index_data = 0
 
-    (front_dir := out_dir / "videos/chunk-000/observation.images.front").mkdir(parents=True, exist_ok=True)
-    (side_dir := out_dir / "videos/chunk-000/observation.images.side").mkdir(parents=True, exist_ok=True)
+    (up_dir := out_dir / "videos/chunk-000/observation.images.side").mkdir(parents=True, exist_ok=True)
+    (side_dir := out_dir / "videos/chunk-000/observation.images.up").mkdir(parents=True, exist_ok=True)
     chunk_data_dir = out_dir / "data" / "chunk-000"
     chunk_data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -505,11 +505,11 @@ def merge_datasets(out_dir, *dataset_dirs):
             shutil.copy(episode_file, out_dir / "data/chunk-000" / new_data_name)
             global_episode_index_data += 1
 
-        src_front_dir = video_chunk / "observation.images.front"
-        for video_file in sorted(src_front_dir.glob("episode_*.mp4")):
-            new_front_name = f"episode_{video_front_index:06d}.mp4"
-            shutil.copy(video_file, front_dir / new_front_name)
-            video_front_index += 1
+        src_up_dir = video_chunk / "observation.images.side"
+        for video_file in sorted(src_up_dir.glob("episode_*.mp4")):
+            new_up_name = f"episode_{video_up_index:06d}.mp4"
+            shutil.copy(video_file, up_dir / new_up_name)
+            video_up_index += 1
 
         src_side_dir = video_chunk / "observation.images.side"
         for video_file in sorted(src_side_dir.glob("episode_*.mp4")):
@@ -658,7 +658,7 @@ class CameraReader(Thread):
                 #self.frame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (320, 240)).copy()
                 #self.frame = cv2.resize(frame, (320, 240)).copy()
                 #self.frame = cv2.resize(frame, (512, 512)).copy()
-                self.frame = frame.copy()
+                self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).copy()
                 self.frame_updates += 1
                 #print("Grab?", self.cap.grab())
                 #print("\rUpdated frame x", self.frame_updates, end="\n")
@@ -668,7 +668,9 @@ class CameraReader(Thread):
 
     def stop(self):
         self.running = False
-        
+
+
+  
 def main():
     """ A repetoire of useful main functions: """
     #test_webcam("https://192.168.0.159:8080/shot.jpg")
@@ -681,9 +683,9 @@ def main():
     
     # I "outsource" the train script
     
-    #record_dataset("f")
+    record_dataset("h")
     #teleoperate(teleop_config())
-    test_policy()
+    #test_policy()
 
 if __name__ == "__main__":
     main()

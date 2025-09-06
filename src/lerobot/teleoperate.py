@@ -178,8 +178,8 @@ def teleop_loop(
             dataset.add_frame(
                 frame={
                     "observation.state": np.array(joints_deg, dtype=np.float32),   # robot state
-                    "observation.images.front": webcam1_reader.frame.copy(),
-                    "observation.images.side": webcam2_reader.frame.copy(),
+                    "observation.images.side": webcam1_reader.frame.copy(),
+                    "observation.images.up": webcam2_reader.frame.copy(),
                     "action": np.array(calculated_new_joints_deg, dtype=np.float32),
                 },
                 task=task,        # or whatever
