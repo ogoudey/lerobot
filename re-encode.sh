@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-ROOT="data/fg/videos"
+ROOT="data/h/videos"
 
 find "$ROOT" -type f -name "*.mp4" | while read -r f; do
     codec=$(/usr/bin/ffprobe -v error -select_streams v:0 -show_entries stream=codec_name \
