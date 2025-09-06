@@ -255,7 +255,7 @@ def record_dataset(dataset_name="dataset3"):
 def test_policy():
     """ Runs the SmolVLA policy at policy_path. Finicky, not working fully. """
     _init_rerun(session_name="smolvla")
-    policy_path = "/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-03/22-02-20_smolvla/checkpoints/003000/pretrained_model"
+    policy_path = "//home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-05/08-48-05_smolvla/checkpoints/last/pretrained_model"
     #policy_path = "lerobot/smolvla_base"
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
@@ -511,7 +511,7 @@ def merge_datasets(out_dir, *dataset_dirs):
             shutil.copy(video_file, up_dir / new_up_name)
             video_up_index += 1
 
-        src_side_dir = video_chunk / "observation.images.side"
+        src_side_dir = video_chunk / "observation.images.up"
         for video_file in sorted(src_side_dir.glob("episode_*.mp4")):
             new_side_name = f"episode_{video_side_index:06d}.mp4"
             shutil.copy(video_file, side_dir / new_side_name)
@@ -678,7 +678,7 @@ def main():
     
     #dummy_dataset()
 
-    #merge_datasets("data/merged", "data/e752",  "data/e265")
+    #merge_datasets("data/fg", "data/g2",  "data/f5")
     #check_episode_stats("data/f5/meta/episodes_stats.jsonl")
     
     # I "outsource" the train script

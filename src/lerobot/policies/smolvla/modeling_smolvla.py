@@ -389,7 +389,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
                 batch[k] = torch.stack(list(self._queues[k]), dim=1)
         # Verifications... #
         print("State:", batch["observation.state"].cpu().numpy())
-        for cam_key in ["observation.images.front", "observation.images.side"]:
+        for cam_key in ["observation.images.front", "observation.images.up"]:
             if cam_key in batch:
                 img = batch[cam_key]
                 print(f"{cam_key}: mean={img.mean().item():.2f}, std={img.std().item():.2f}, min={img.min().item()}, max={img.max().item()}")
