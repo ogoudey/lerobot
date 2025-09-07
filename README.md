@@ -1,17 +1,17 @@
-<h1>Fork of LeRobot</h1>
+## Fork of LeRobot
 
-<p>Added: Keyboard per-joint teleoperation. `custom_brains/test.py` will perform this.</p>
+Added: Keyboard per-joint teleoperation. Data recording script. Policy training script. See <b>custom_brains/README.md</b> for more details</p>
 
-<p>
-```
+
+```bash
 conda install -c conda-forge ffmpeg
 ```
-</p>
-<p>
-```
+
+
+```bash
 pip install lerobot[.smolvla]
 ```
-</p>
+
 <br/>
 <br/>
 <br/>
