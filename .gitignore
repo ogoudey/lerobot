@@ -168,7 +168,7 @@ wandb/
 
 # Data folders
 data/
-outputs/
+outputs/train
 
 # Translations
 *.mo
