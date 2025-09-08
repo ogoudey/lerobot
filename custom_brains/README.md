@@ -17,4 +17,6 @@ python3 src/lerobot/scripts/train.py --dataset.repo_id=/home/olin/Robotics/Proje
 ```
 
 ### Latest Update
-Convergence! SO-101 picks up the stuffed animal and puts it in bowl...
+Convergence! SO-101 has picked up the stuffed animal and put it in the bowl...
+
+See `outputs/*_evaluation` for some notes based on the [questionnaire](https://olimn.com/questionnaire.html).
