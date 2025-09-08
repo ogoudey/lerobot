@@ -47,7 +47,7 @@ python3 src/lerobot/scripts/train.py --dataset.repo_id=/home/olin/Robotics/Proje
 ```
 
 ### Latest Update
-"Put the stuffed animal in the bowl."
+"Put the stuffed animal in the bowl"
 [task0.webm](https://github.com/user-attachments/assets/4db9c011-f856-40c3-a8e7-6b1ff75f1e97)
 
 See `outputs/*_evaluation` for some notes based on the [questionnaire](https://olimn.com/questionnaire.html).
