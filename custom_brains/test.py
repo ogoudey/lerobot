@@ -178,7 +178,8 @@ def record_dataset(dataset_name="dataset3"):
     
     try:
         robot = reset_bw_episode(robot, teleop)
-        task = "Put the cube in the bowl" # preset for ease
+        task = input("Task name?:")
+        #task = "Put the cube in the bowl" # preset for ease
         input("[hit Enter]")
         with VideoEncodingManager(dataset):
             while True:
@@ -292,7 +293,7 @@ def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/output
         print("\rWaiting... on camera2")
         time.sleep(0.01)
     logging.info("Cameras on.")
-    
+    input("[hit Enter]")
     robot = reset_bw_episode(robot, None)
     try:
         single_task=input("Instruction:\n")
