@@ -15,7 +15,7 @@ To see the original README, go to the original repo. Here it is trimmed to what 
                  functions     loop       |             \
                                    so101_follower.py    teleop_keyboard.py
                                           |                       \
-                             send_action(), get_observation()  src for keyboard controls and IK
+                             send_action(), get_observation()  keyboard controls and IK
 ```
 
 ## Installation
