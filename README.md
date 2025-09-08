@@ -1,16 +1,52 @@
 ## Fork of LeRobot
 
-Added: Keyboard per-joint teleoperation. Data recording script. Policy training script. See <b>custom_brains/README.md</b> for more details</p>
+To see the original README, go to the original repo. Here it is trimmed to what is useful for this pipeline.
 
+## Structure
 
-```bash
-conda install -c conda-forge ffmpeg
+```
+                         lerobot (this repo, a modified pip package)
+                       /               \         |         \          \
+               custom_brains           src   this README  data      outputs
+              /  /    |               /   \                 |           \
+             / URDF test.py  teleoperate.py src       datasets   trained policies
+         README      /           |         /  \
+               all important  teleop() robots teleoperators
+                 functions     loop       |             \
+                                   so101_follower.py    teleop_keyboard.py
+                                          |                       \
+                             send_action(), get_observation()  src for keyboard controls and IK
 ```
 
+## Installation
+
+LeRobot works with Python 3.10+ and PyTorch 2.2+.
+
+### Environment Setup
+
+Create a virtual environment with Python 3.10 and activate it, e.g. with [`miniconda`](https://docs.anaconda.com/free/miniconda/index.html):
 
 ```bash
-pip install lerobot[.smolvla]
+conda create -y -n lerobot python=3.10
+conda activate lerobot
 ```
+
+When using `miniconda`, install `ffmpeg` in your environment:
+
+```bash
+conda install ffmpeg -c conda-forge
+```
+
+```bash
+
+git clone https://github.com/ogoudey/lerobot.git # replaces https://github.com/ogoudey/lerobot.git
+cd lerobot
+pip install -e
+# install smolvla and feetech (servo stuff)
+pip install -e lerobot[.smolvla, feetech]
+```
+Installation complete.
+
 
 <br/>
 <br/>
