@@ -164,7 +164,7 @@ def record_dataset(dataset_name="dataset3"):
     dataset = LeRobotDataset.create(
         repo_id="olingoudey/" + dataset_name,
         fps=t_cfg.fps,
-        root=Path('./data/' + dataset_name + str(random.randint(0, 1000))),
+        root=Path('./data/' + dataset_name + str(random.randint(0, 1000))), # random numbers for safety
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
@@ -221,8 +221,13 @@ def record_dataset(dataset_name="dataset3"):
             chat = input("Save dataset?\n")
             if chat == "" or strtobool(chat):
                 chat = input("Push to hub?\n")
-                write_dataset_card(dataset.root / "README.md")
-                logging.info("Great. Saved.")
+                if chat == "" or strtobool(chat):
+                    write_dataset_card(dataset.root / "README.md")
+                    logging.info("Great. Pushing.")
+                    dataset.push_to_hub()
+                    logging.info("Pushed.")
+                else:
+                    logging.info("Great. Saved locally only.")    
             else:
                 raise KeyboardInterrupt # goto V
         except KeyboardInterrupt:
@@ -660,6 +665,9 @@ configs:
 ---
 This dataset was created using [my fork of LeRobot](https://github.com/ogoudey/lerobot).
 
+## Joint calibration
+Joint calibration for the featured SO-101 is on [Github](https://github.com/ogoudey/lerobot-calibration)
+
 ## Dataset Structure
 
 [meta/info.json](meta/info.json):
@@ -723,9 +731,9 @@ def main():
     
     # I "outsource" the train script
     
-    #record_dataset(dataset_name"h") # at olingoudey/...
+    record_dataset(dataset_name="pretzels_on_plate") # which is at olingoudey/...
     #teleoperate(teleop_config())
-    test_policy()
+    #test_policy()
 
 if __name__ == "__main__":
     main()

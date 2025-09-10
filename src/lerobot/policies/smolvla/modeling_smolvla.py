@@ -316,6 +316,8 @@ def aloha_gripper_from_angular_inv(value):
     value = unnormalize(value, min_val=-0.6213, max_val=1.4910)
     return normalize(value, min_val=0.4, max_val=1.5)
 
+import threading
+
 
 class SmolVLAPolicy(PreTrainedPolicy):
     """Wrapper class around VLAFlowMatching model to train and run inference within LeRobot."""
@@ -350,6 +352,10 @@ class SmolVLAPolicy(PreTrainedPolicy):
         self.language_tokenizer = AutoProcessor.from_pretrained(self.config.vlm_model_name).tokenizer
         self.model = VLAFlowMatching(config)
         self.reset()
+        
+        self.inference_thread = None
+        self.inference_done = threading.Condition()
+        self.steps_into_chunk = 0
 
     def reset(self):
         """This should be called whenever the environment is reset."""
@@ -389,12 +395,6 @@ class SmolVLAPolicy(PreTrainedPolicy):
                 batch[k] = torch.stack(list(self._queues[k]), dim=1)
         # Verifications... #
         print("State:", batch["observation.state"].cpu().numpy())
-        for cam_key in ["observation.images.front", "observation.images.up"]:
-            if cam_key in batch:
-                img = batch[cam_key]
-                print(f"{cam_key}: mean={img.mean().item():.2f}, std={img.std().item():.2f}, min={img.min().item()}, max={img.max().item()}")
-
-        #
         
         images, img_masks = self.prepare_images(batch)
         state = self.prepare_state(batch)
@@ -405,9 +405,9 @@ class SmolVLAPolicy(PreTrainedPolicy):
         # Unpad actions
         original_action_dim = self.config.action_feature.shape[0]
         actions = actions[:, :, :original_action_dim]
-        print("    Action:", actions.cpu().numpy())
+        #print("    Action:", actions.cpu().numpy())
         actions = self.unnormalize_outputs({ACTION: actions})[ACTION]
-        print("Raw action:", actions.cpu().numpy())
+        #print("Raw action:", actions.cpu().numpy())
         if self.config.adapt_to_pi_aloha:
             actions = self._pi_aloha_encode_actions(actions)
 
@@ -452,12 +452,29 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
             # `self.predict_action_chunk` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
             # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
+            
             self._queues[ACTION].extend(actions.transpose(0, 1)[: self.config.n_action_steps])
 
         return self._queues[ACTION].popleft()
+    
+    def infer(self, batch, noise):
+        print("Getting", self.config.n_action_steps, "new actions...")
+            
+        actions = self._get_action_chunk(batch, noise)
+
+        # `self.predict_action_chunk` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
+        # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
+        self._queues[ACTION] = deque(
+            actions.transpose(0, 1)[: self.config.n_action_steps][self.steps_into_chunk :], maxlen=self.config.n_action_steps
+        )
+        self.inference_done.set()
         
+
+        
+    
+       
     @torch.no_grad()
-    def newselect_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def new_select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
         """
         Added function.
         
@@ -466,22 +483,22 @@ class SmolVLAPolicy(PreTrainedPolicy):
         self.eval()
         batch = self._prepare_batch(batch)
         self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
-
-        # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
-        # querying the policy.
-        g = 0.5
         
-        if len(self._queues[ACTION]) < self.config.n_action_steps * g:
-            print("Getting", self.config.n_action_steps, "new actions...")
+        g = 0.75
+        
+        
+        if len(self._queues[ACTION]) < g * self.config.n_action_steps):
+            self.inference_thread = threading.Thread(target=infer, args=[batch, noise])
+            self.inference_thread.start()
+            if len(self._queues[ACTION]) == 0):
+                self.inference_thread.join()
+
+        if self.inference_done.is_set():
+            self.inference_thread.join()
+            self.inference_done.clear()
             
-            actions = self._get_action_chunk(batch, noise)
-
-            # `self.predict_action_chunk` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
-            # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
-            self._queues[ACTION] = deque(
-                actions.transpose(0, 1)[: self.config.n_action_steps], maxlen=self.config.n_action_steps
-            )
-
+          
+        self.steps_into_chunk += 1
         return self._queues[ACTION].popleft()
 
     def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> dict[str, Tensor]:
