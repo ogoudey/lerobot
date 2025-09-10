@@ -162,7 +162,7 @@ def record_dataset(dataset_name="dataset3"):
     dataset_features = {**action_features, **obs_features}
     
     dataset = LeRobotDataset.create(
-        repo_id="olindatasets",
+        repo_id="olingoudey/" + dataset_name,
         fps=t_cfg.fps,
         root=Path('./data/' + dataset_name + str(random.randint(0, 1000))),
         robot_type=robot.name,
@@ -220,6 +220,8 @@ def record_dataset(dataset_name="dataset3"):
         try:
             chat = input("Save dataset?\n")
             if chat == "" or strtobool(chat):
+                chat = input("Push to hub?\n")
+                write_dataset_card(dataset.root / "README.md")
                 logging.info("Great. Saved.")
             else:
                 raise KeyboardInterrupt # goto V
@@ -471,10 +473,20 @@ def probe_shape(url):
     
     return frame.shape
  
-
+def get_dataset(path, repo_id):
+    """ Interpreter helper """
+    dataset = LeRobotDataset(
+        repo_id=repo_id,
+        root=Path(path),
+    )
+    print(dataset)
+    return dataset
 
 def merge_datasets(out_dir, *dataset_dirs):
-    """ Used to combine two identically formatted datasets, likely because a recording session was interrupted. """
+    """
+    Used to combine two identically formatted datasets, likely because a recording session was interrupted. 
+    Kind of a force. Don't use without editting.
+    """
     out_dir = Path(out_dir)
     (out_dir / "data").mkdir(parents=True, exist_ok=True)
     (out_dir / "videos").mkdir(parents=True, exist_ok=True)
@@ -635,6 +647,27 @@ def teleop_config():
     )
     return teleop_config 
 
+def write_dataset_card(filename="README.md"):
+    content = """
+---
+task_categories:
+- robotics
+tags:
+- LeRobot
+configs:
+- config_name: default
+  data_files: data/*/*.parquet
+---
+This dataset was created using [my fork of LeRobot](https://github.com/ogoudey/lerobot).
+
+## Dataset Structure
+
+[meta/info.json](meta/info.json):
+"""
+    with open(filename, "w") as f:
+        f.write(content)
+    print(f"Wrote {filename} to current folder.")
+
 class CameraReader(Thread):
     """ Class that provides a .frame and updates it as a parallel thread. """
     def __init__(self, cap):
@@ -670,6 +703,13 @@ class CameraReader(Thread):
         self.running = False
 
 
+### Dataset Wrangling
+# d = test.get_dataset(path="data/h485", repo_id"olingoudey/put_the_stuffed_animal_in_the_bowl") # PRovide root (relative path) and remote repo
+# d.write_dataset_card("data/h485/README.md")
+# d.push_to_hub() # to remote repo
+# d.pull_from_repo() # to local root, I think, since `root` is specified. If root folder doesn't exist, idk.
+
+
   
 def main():
     """ A repetoire of useful main functions: """
@@ -683,7 +723,7 @@ def main():
     
     # I "outsource" the train script
     
-    #record_dataset("h")
+    #record_dataset(dataset_name"h") # at olingoudey/...
     #teleoperate(teleop_config())
     test_policy()
 
