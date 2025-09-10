@@ -46,7 +46,7 @@ conda install ffmpeg -c conda-forge
 
 git clone https://github.com/ogoudey/lerobot.git # replaces https://github.com/ogoudey/lerobot.git
 cd lerobot
-pip install -e
+pip install -e .
 # install smolvla and feetech (servo stuff)
 pip install -e lerobot[.smolvla, feetech]
 ```
