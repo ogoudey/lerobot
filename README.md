@@ -16,6 +16,11 @@ To see the original README, go to the original repo. Here it is trimmed to what 
                                    so101_follower.py    teleop_keyboard.py
                                           |                       \
                              send_action(), get_observation()  keyboard controls and IK
+
+More modifications in src:
+- modeling_smolvla: added asynchronous inference (new_action_select())
+- control_utils: added call to smolvlapolicy.new_action_select()
+
 ```
 
 ## Installation
