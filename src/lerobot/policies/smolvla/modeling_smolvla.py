@@ -487,10 +487,10 @@ class SmolVLAPolicy(PreTrainedPolicy):
         g = 0.75
         
         
-        if len(self._queues[ACTION]) < g * self.config.n_action_steps):
+        if len(self._queues[ACTION] < g * self.config.n_action_steps):
             self.inference_thread = threading.Thread(target=infer, args=[batch, noise])
             self.inference_thread.start()
-            if len(self._queues[ACTION]) == 0):
+            if len(self._queues[ACTION] == 0):
                 self.inference_thread.join()
 
         if self.inference_done.is_set():

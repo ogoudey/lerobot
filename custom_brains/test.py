@@ -486,11 +486,87 @@ def get_dataset(path, repo_id):
     )
     print(dataset)
     return dataset
+ 
+def dataset_folder_task_info(dataset_dir): 
+    datasets_root = Path(dataset_dir)
+    tasks = set()
+    # Iterate over all subfolders in the root
+    for dataset_dir in datasets_root.iterdir():
+        if not dataset_dir.is_dir():
+            continue
+
+        tasks_file = dataset_dir / "meta" / "tasks.jsonl"
+        if not tasks_file.exists():
+            print(f"\nNo tasks.jsonl found in {dataset_dir}")
+            continue
+
+        print(f"\nTasks in dataset: {dataset_dir.name}")
+        with open(tasks_file, "r") as f:
+            for line in f:
+                task_entry = json.loads(line)
+                task = task_entry["task"]
+                tasks.add(task)
+                print("  -", task)
+    print("\n Combined unique tasks:", list(tasks))
+
+def synonomize(output_dir, dataset_dir):
+    from custom_brains.synonym_llm import Synonym_Agent
+    poet = Synonym_Agent()
+    dataset_root = Path(dataset_dir)
+    out_dir = Path(output_dir)
+    tasks_file = dataset_root / "meta" / "tasks.jsonl"
+    episode_stats_file = dataset_root / "meta" / "episodes_stats.jsonl"
+    with open(tasks_file, "r") as f:
+        tasks = [json.loads(l)["task"] for l in f] # like enumerate()
+            
+    new_tasks = {}
+    new_stats = []
+    global_task_index = 0
+    with open(episode_stats_file, "r") as f:
+        for line in f:
+            ep = json.loads(line)
+            task = tasks[ep["stats"]["task_index"]["min"][0]]
+            new_task_description = poet.synonomize(task)
+            old_count = ep["stats"]["task_index"]["count"][0]
+            new_index = global_task_index
+            new_tasks[new_task_description] = new_index
+            ep["stats"]["task_index"] = {"min": [new_index], "max": [new_index], "mean": [float(new_index)], "std": [float(new_index)], "count": [old_count]}
+            global_task_index += 1
+            new_stats.append(ep)
+    
+    with open(out_dir / "meta/episodes_stats.jsonl", "w") as f:
+        for stat in new_stats:
+            f.write(json.dumps(stat) + "\n")
+
+    with open(out_dir / "meta/tasks.jsonl", "w") as f:
+        for task in new_tasks.keys():
+            task_entry = {"task_index": new_tasks[task], "task": task}
+            f.write(json.dumps(task_entry) + "\n")
+    
+    # ---- Copy remaining files from meta/, data/, and videos/ ----
+    skip = {
+        "meta/episodes_stats.jsonl",
+        "meta/tasks.jsonl",
+    }
+
+    for folder in ["meta", "data", "videos"]:
+        src_dir = dataset_root / folder
+        dst_dir = out_dir / folder
+        dst_dir.mkdir(parents=True, exist_ok=True)
+
+        for file in src_dir.rglob("*"):
+            if file.is_file():
+                rel_path = file.relative_to(dataset_root)
+                if rel_path.as_posix() not in skip:
+                    dst_file = dst_dir / file.relative_to(src_dir)
+                    dst_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(file, dst_file)
+                
 
 def merge_datasets(out_dir, *dataset_dirs):
     """
     Used to combine two identically formatted datasets, likely because a recording session was interrupted. 
-    Kind of a force. Don't use without editting.
+    Kind of a force. Don't use without editing.
     """
     out_dir = Path(out_dir)
     (out_dir / "data").mkdir(parents=True, exist_ok=True)
@@ -500,55 +576,92 @@ def merge_datasets(out_dir, *dataset_dirs):
     # merged metadata
     merged_episodes = []
     merged_stats = []
-    merged_tasks = [{"task_index": 0, "task": "Put the cube in the bowl"}]
+    merged_tasks = {}
+    
     global_episode_index_episodes = 0
     global_episode_index_stats = 0
     video_up_index = 0
     video_side_index = 0
     global_episode_index_data = 0
+    global_task_index = 0
 
-    (up_dir := out_dir / "videos/chunk-000/observation.images.side").mkdir(parents=True, exist_ok=True)
-    (side_dir := out_dir / "videos/chunk-000/observation.images.up").mkdir(parents=True, exist_ok=True)
+    (up_dir := out_dir / "videos/chunk-000/observation.images.up").mkdir(parents=True, exist_ok=True)
+    (side_dir := out_dir / "videos/chunk-000/observation.images.side").mkdir(parents=True, exist_ok=True)
     chunk_data_dir = out_dir / "data" / "chunk-000"
     chunk_data_dir.mkdir(parents=True, exist_ok=True)
 
-    for d in dataset_dirs:
+    print(f"Starting merge of {len(dataset_dirs)} datasets into {out_dir}\n")
+
+    for d_idx, d in enumerate(dataset_dirs):
         d = Path(d)
+        print(f"Processing dataset {d_idx + 1}/{len(dataset_dirs)}: {d}")
         data_chunk = d / "data/chunk-000"
         video_chunk = d / "videos/chunk-000"
         
+        tasks_file = d / "meta/tasks.jsonl"
+        with open(tasks_file) as f:
+            tasks = [json.loads(l) for l in f]
+        print(f"  Found {len(tasks)} tasks in this dataset")
+
         for episode_file in sorted(data_chunk.glob("episode_*.parquet")):
             new_data_name = f"episode_{global_episode_index_data:06d}.parquet"
             shutil.copy(episode_file, out_dir / "data/chunk-000" / new_data_name)
             global_episode_index_data += 1
 
-        src_up_dir = video_chunk / "observation.images.side"
+        src_up_dir = video_chunk / "observation.images.up"
         for video_file in sorted(src_up_dir.glob("episode_*.mp4")):
             new_up_name = f"episode_{video_up_index:06d}.mp4"
+            print("  Copying video to up_dir at", up_dir / new_up_name)
             shutil.copy(video_file, up_dir / new_up_name)
             video_up_index += 1
 
-        src_side_dir = video_chunk / "observation.images.up"
+        src_side_dir = video_chunk / "observation.images.side"
         for video_file in sorted(src_side_dir.glob("episode_*.mp4")):
             new_side_name = f"episode_{video_side_index:06d}.mp4"
+            print("  Copying video to side_dir at", side_dir / new_side_name)
             shutil.copy(video_file, side_dir / new_side_name)
             video_side_index += 1
 
-        # load and update metadata
-        with open(d / "meta" / "episodes.jsonl") as f:
-            print("Copying data from", d)
+        task_index_local_to_global = {}
+        with open(d / "meta" / "tasks.jsonl") as f:
+            print("  Opening tasks")
+            for line in f:
+                task_entry = json.loads(line)
+                task_index = task_entry["task_index"]
+                task = task_entry["task"]
+                if task in merged_tasks:
+                    task_index_local_to_global[task_index] = merged_tasks[task]          
+                else:
+                    merged_tasks[task] = global_task_index
+                    task_index_local_to_global[task_index] = global_task_index
+                    global_task_index += 1
+                
+        with open(d / "meta/episodes.jsonl") as f:
+            print("  Copying episodes.jsonl from", d)
             for line in f:
                 ep = json.loads(line)
                 ep["episode_index"] = global_episode_index_episodes
                 merged_episodes.append(ep)
                 global_episode_index_episodes += 1
-
-        with open(d / "meta" / "episodes_stats.jsonl") as f:
+                
+        with open(d / "meta/episodes_stats.jsonl") as f:
+            print("  Copying episodes_stats.jsonl from", d)
             for line in f:
                 stat = json.loads(line)
                 stat["episode_index"] = global_episode_index_stats
                 merged_stats.append(stat)
                 global_episode_index_stats += 1
+                
+                new_index = task_index_local_to_global[stat["stats"]["task_index"]["min"][0]] 
+                old_count = stat["stats"]["task_index"]["count"][0]
+                stat["stats"]["task_index"] = {"min": [new_index], "max": [new_index], "mean": [float(new_index)], "std": [float(new_index)], "count": [old_count]}
+
+        # Cumulative totals after each dataset
+        print(f"  Cumulative totals after dataset {d_idx + 1}:")
+        print(f"    Total episodes merged: {global_episode_index_episodes}")
+        print(f"    Total stats merged: {global_episode_index_stats}")
+        print(f"    Total videos copied (up): {video_up_index}, (side): {video_side_index}")
+        print(f"    Total unique tasks: {len(merged_tasks)}\n")
 
     # write merged metadata
     with open(out_dir / "meta/episodes.jsonl", "w") as f:
@@ -560,22 +673,22 @@ def merge_datasets(out_dir, *dataset_dirs):
             f.write(json.dumps(stat) + "\n")
 
     with open(out_dir / "meta/tasks.jsonl", "w") as f:
-        for task in merged_tasks:
-            f.write(json.dumps(task) + "\n")
+        for task in merged_tasks.keys():
+            task_entry = {"task_index": merged_tasks[task], "task": task}
+            f.write(json.dumps(task_entry) + "\n")
 
-    # generate merged info.json
     info = {
         "codebase_version": "v2.1",
         "robot_type": "so101_follower",
         "total_episodes": len(merged_episodes),
         "total_frames": sum(ep["length"] for ep in merged_episodes),
         "total_tasks": len(merged_tasks),
-        "total_videos": len(merged_episodes) * 2,  # adjust if you have more/less videos per episode
+        "total_videos": len(merged_episodes) * 2,
         "total_chunks": 1,
         "chunks_size": 1000,
         "fps": 30,
         "splits": {"train": f"0:{len(merged_episodes)}"},
-        "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+        "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet", 
         "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
     }
 
@@ -587,6 +700,9 @@ def merge_datasets(out_dir, *dataset_dirs):
 
     with open(out_dir / "meta/info.json", "w") as f:
         json.dump(info, f, indent=4)
+
+    print(f"Merging complete. Total episodes: {len(merged_episodes)}, total tasks: {len(merged_tasks)}")
+
 
 def check_episode_stats(file_path, eps=1e-4):
     """

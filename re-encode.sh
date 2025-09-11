@@ -1,9 +1,16 @@
 #!/bin/bash
 set -euo pipefail
-ROOT="data/h/videos"
+
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <root_of_dataset>"
+    exit 1
+fi
+
+ROOT="$1"
 
 find "$ROOT" -type f -name "*.mp4" | while read -r f; do
-    codec=$(/usr/bin/ffprobe -v error -select_streams v:0 -show_entries stream=codec_name \
+    # Change to /ur/bin/ffprobe on desktop
+    codec=$(/home/olin/miniconda3/envs/lerobot/bin/ffprobe -v error -select_streams v:0 -show_entries stream=codec_name \
              -of default=noprint_wrappers=1:nokey=1 "$f" || echo "none")
 
     if [ "$codec" = "av1" ]; then
