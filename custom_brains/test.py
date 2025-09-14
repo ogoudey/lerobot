@@ -114,7 +114,7 @@ from lerobot.scripts.train import update_policy
 
 logger = logging.getLogger(__name__)
 
-def record_dataset(dataset_name="dataset3"):
+def record_dataset(dataset_name="dataset3", camera_urls=["rtsp://192.168.0.159:8080/h264_ulaw.sdp", "rtsp://192.168.0.151:8080/h264_ulaw.sdp"]):
     t_cfg = teleop_config()
 
     init_logging()
@@ -125,8 +125,8 @@ def record_dataset(dataset_name="dataset3"):
     teleop = make_teleoperator_from_config(t_cfg.teleop)
     robot = make_robot_from_config(t_cfg.robot)
     input("Start cameras... [hit Enter to continue]")
-    webcam1_url = "rtsp://192.168.0.159:8080/h264_ulaw.sdp"
-    webcam2_url = "rtsp://192.168.0.151:8080/h264_ulaw.sdp"
+    webcam1_url = camera_urls[0]
+    webcam2_url = camera_urls[1]
     webcam1_cap = cv2.VideoCapture(webcam1_url)
     webcam2_cap = cv2.VideoCapture(webcam2_url)
     webcam1_reader = CameraReader(webcam1_cap)
@@ -260,7 +260,7 @@ def record_dataset(dataset_name="dataset3"):
         robot.disconnect()
 
 
-def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-06/14-21-15_smolvla/checkpoints/last/pretrained_model"):
+def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-06/14-21-15_smolvla/checkpoints/last/pretrained_model", camera_urls=["rtsp://192.168.0.159:8080/h264_ulaw.sdp", "rtsp://192.168.0.151:8080/h264_ulaw.sdp"]):
     """ Runs the SmolVLA policy at policy_path."""
     _init_rerun(session_name="smolvla")
     #policy_path = "lerobot/smolvla_base" # to test the base model (it's weird and ineffective)
@@ -276,8 +276,8 @@ def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/output
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     logging.info("Policy made.")
-    webcam1_url = "rtsp://192.168.0.159:8080/h264_ulaw.sdp"
-    webcam2_url = "rtsp://192.168.0.151:8080/h264_ulaw.sdp"
+    webcam1_url = camera_urls[0]
+    webcam2_url = camera_urls[1]
     webcam1_cap = cv2.VideoCapture(webcam1_url)
     webcam2_cap = cv2.VideoCapture(webcam2_url)
     webcam1_reader = CameraReader(webcam1_cap)
@@ -847,7 +847,7 @@ def main():
     
     # I "outsource" the train script
     
-    record_dataset(dataset_name="pretzels_on_plate") # which is at olingoudey/...
+    record_dataset(dataset_name="stuffed_animal_bowl_to_table") # which is at olingoudey/...
     #teleoperate(teleop_config())
     #test_policy()
 
