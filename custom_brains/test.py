@@ -266,7 +266,7 @@ def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/output
     #policy_path = "lerobot/smolvla_base" # to test the base model (it's weird and ineffective)
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
-        id="my_robot",
+        id="normal",
         use_degrees=False,
     )
     robot = SO101Follower(robot_config)
@@ -416,7 +416,7 @@ def dummy_dataset():
         repo_id="/datasets",
         fps=30,
         root=Path('./data' + str(random.randint(0, 100))),
-        robot_type="my_robot",
+        robot_type="normal",
         features=dataset_features,
         use_videos=True,
         image_writer_processes=2,
@@ -747,7 +747,7 @@ def teleop_config():
     """ Helper function to create a TeleoperateConfig """
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
-        id="my_robot",
+        id="normal",
         use_degrees=False,
     )
 
@@ -847,7 +847,7 @@ def main():
     
     # I "outsource" the train script
     
-    record_dataset(dataset_name="stuffed_animal_bowl_to_table") # which is at olingoudey/...
+    record_dataset(dataset_name="stationary_env", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
     #teleoperate(teleop_config())
     #test_policy()
 
