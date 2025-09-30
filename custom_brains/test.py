@@ -194,6 +194,9 @@ def record_dataset(dataset_name="dataset3", camera_urls=["rtsp://192.168.0.159:8
                             logging.info("Saving episode (out)")
                             dataset.save_episode()
                             logging.info("Saved episode (out)")
+                            chat = input("Type task: (hit Enter/"" to skip)")
+                            if not chat == "":
+                                task = chat
                         else:
                             logging.info("Deleting episode (out)")
                             dataset.clear_episode_buffer()
@@ -829,7 +832,7 @@ class CameraReader(Thread):
 
 ### Dataset Wrangling
 # d = test.get_dataset(path="data/h485", repo_id"olingoudey/put_the_stuffed_animal_in_the_bowl") # PRovide root (relative path) and remote repo
-# d.write_dataset_card("data/h485/README.md")
+# test.write_dataset_card("data/h485/README.md")
 # d.push_to_hub() # to remote repo
 # d.pull_from_repo() # to local root, I think, since `root` is specified. If root folder doesn't exist, idk.
 
@@ -847,7 +850,7 @@ def main():
     
     # I "outsource" the train script
     
-    record_dataset(dataset_name="stationary_env", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
+    record_dataset(dataset_name="moving_object_and_container", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
     #teleoperate(teleop_config())
     #test_policy()
 
