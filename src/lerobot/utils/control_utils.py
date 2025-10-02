@@ -124,7 +124,7 @@ def predict_action(
 
         # Compute the next action with the policy
         # based on the current observation
-        action = policy.new_select_action(observation)
+        action = policy.select_action(observation)
 
         # Remove batch dimension
         action = action.squeeze(0)

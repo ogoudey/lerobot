@@ -653,12 +653,13 @@ def merge_datasets(out_dir, *dataset_dirs):
                 stat = json.loads(line)
                 stat["episode_index"] = global_episode_index_stats
                 merged_stats.append(stat)
-                global_episode_index_stats += 1
+                
                 
                 new_index = task_index_local_to_global[stat["stats"]["task_index"]["min"][0]] 
                 old_count = stat["stats"]["task_index"]["count"][0]
+                stat["stats"]["episode_index"] = {"min": [global_episode_index_stats], "max": [global_episode_index_stats], "mean": [float(global_episode_index_stats)], "std": [float(global_episode_index_stats)], "count": [old_count]}
                 stat["stats"]["task_index"] = {"min": [new_index], "max": [new_index], "mean": [float(new_index)], "std": [float(new_index)], "count": [old_count]}
-
+                global_episode_index_stats += 1
         # Cumulative totals after each dataset
         print(f"  Cumulative totals after dataset {d_idx + 1}:")
         print(f"    Total episodes merged: {global_episode_index_episodes}")
@@ -850,9 +851,9 @@ def main():
     
     # I "outsource" the train script
     
-    record_dataset(dataset_name="moving_object_and_container", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
+    #record_dataset(dataset_name="moving_object_and_container", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
     #teleoperate(teleop_config())
-    #test_policy()
+    test_policy("/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/stationary_env/checkpoints/002000/pretrained_model", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"])
 
 if __name__ == "__main__":
     main()
