@@ -320,8 +320,8 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
         self.key_to_delta = {
             "i": ("x", +1),
             "k": ("x", -1),
-            "j": ("y", +1),
-            "l": ("y", -1),
+            "j": ("y", +2),
+            "l": ("y", -2),
             "u": ("z", +1),
             "o": ("z", -1),
         }

@@ -851,9 +851,9 @@ def main():
     
     # I "outsource" the train script
     
-    #record_dataset(dataset_name="moving_object_and_container", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
+    record_dataset(dataset_name="stationary_mug", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
     #teleoperate(teleop_config())
-    test_policy("/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/stationary_env/checkpoints/002000/pretrained_model", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"])
+    #test_policy("/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/stationary_env/checkpoints/002000/pretrained_model", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"])
 
 if __name__ == "__main__":
     main()
