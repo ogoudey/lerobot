@@ -163,6 +163,8 @@ class PreTrainedConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
     ) -> T:
         model_id = str(pretrained_name_or_path)
         config_file: str | None = None
+        print(Path(model_id))
+        print("Is dir?", Path(model_id).is_dir())
         if Path(model_id).is_dir():
             if CONFIG_NAME in os.listdir(model_id):
                 config_file = os.path.join(model_id, CONFIG_NAME)
