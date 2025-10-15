@@ -12,6 +12,7 @@ from threading import Thread
 import json
 import shutil
 from pathlib import Path
+import pandas as pd
 
 # --- Third-party ---
 import cv2
@@ -276,8 +277,11 @@ def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/output
     robot.connect()
     
     smolvla_policy = SmolVLAPolicy.from_pretrained(policy_path)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+        print("Uh oh... no GPU.")
     logging.info("Policy made.")
     webcam1_url = camera_urls[0]
     webcam2_url = camera_urls[1]
@@ -772,6 +776,83 @@ def teleop_config():
     )
     return teleop_config 
 
+def relabel_data(dataset_root: str):
+    """
+    Realign all episode_index and task_index values in the dataset's parquet files
+    with the official meta information from episodes.jsonl and tasks.jsonl.
+
+    Args:
+        dataset_root (str): Path to the dataset directory (e.g. ".../lerobot/data/stationary_mug445/data")
+    """
+
+    dataset_root = Path(dataset_root)
+
+    data = dataset_root / "data"
+
+    # --- Load metadata ---
+    episodes_path = dataset_root / "meta" / "episodes.jsonl"
+    tasks_path = dataset_root / "meta" / "tasks.jsonl"
+
+    episodes = []
+    with open(episodes_path, "r") as f:
+        for line in f:
+            episodes.append(json.loads(line))
+
+    tasks = []
+    with open(tasks_path, "r") as f:
+        for line in f:
+            tasks.append(json.loads(line))
+
+    # Build a mapping from task string to task_index
+    task_str_to_idx = {t["task"]: t["task_index"] for t in tasks}
+    print(task_str_to_idx)
+    # Build a mapping from episode_index to its correct task_index
+    episode_to_task_idx = {}
+    for ep in episodes:
+        ep_idx = ep["episode_index"]
+        # Each episode has a list of tasks; we’ll take the first (standard for LeRobot)
+        task_str = ep["tasks"][0]
+        if task_str not in task_str_to_idx:
+            raise ValueError(f"Task '{task_str}' from episode {ep_idx} not found in tasks.jsonl")
+        task_idx = task_str_to_idx[task_str]
+        episode_to_task_idx[ep_idx] = task_idx
+    print(episode_to_task_idx)
+    # --- Iterate over all parquet files ---
+    parquet_files = sorted(data.glob("chunk-*/*.parquet"))
+    print(f"Found {len(parquet_files)} parquet files to relabel.")
+
+    for pq_file in parquet_files:
+        df = pd.read_parquet(pq_file)
+
+        # All frames in this parquet belong to the same episode
+        # We get the intended episode index from the parquet filename
+        # e.g., episode_000049.parquet → 49
+        try:
+            episode_idx = int(pq_file.stem.split("_")[-1])
+        except ValueError:
+            raise RuntimeError(f"Unexpected parquet filename format: {pq_file.name}")
+
+        if episode_idx not in episode_to_task_idx:
+            print(f"⚠️ Episode {episode_idx} not found in episodes.jsonl, skipping {pq_file}")
+            continue
+
+        correct_task_idx = episode_to_task_idx[episode_idx]
+
+        # Overwrite the columns
+        df["episode_index"] = episode_idx
+        if (df["task_index"] != correct_task_idx).any():
+            wrong_value = df["task_index"].iloc[0]
+            print(f"❌ Mismatched task_index in {pq_file.name}: found {wrong_value}, expected {correct_task_idx}")
+
+        df["task_index"] = correct_task_idx
+            
+        # Save back to the same file
+        df.to_parquet(pq_file, index=False)
+        print(f"✅ Relabeled episode {episode_idx} (task_index={correct_task_idx}) in {pq_file.name}")
+
+    print("🎉 All parquet files relabeled successfully.")
+
+
 def write_dataset_card(filename="README.md"):
     content = """
 ---
@@ -851,9 +932,9 @@ def main():
     
     # I "outsource" the train script
     
-    record_dataset(dataset_name="stationary_mug", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
+    #record_dataset(dataset_name="stationary_mug", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
     #teleoperate(teleop_config())
-    #test_policy("/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/stationary_env/checkpoints/002000/pretrained_model", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"])
+    test_policy("/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/stationary_env_7k", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"])
 
 if __name__ == "__main__":
     main()
