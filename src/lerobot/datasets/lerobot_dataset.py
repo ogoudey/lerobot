@@ -606,7 +606,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
             hf_dataset = load_dataset("parquet", data_files=files, split="train")
 
         # TODO(aliberts): hf_dataset.set_format("torch")
-        hf_dataset.set_format(type="torch")
         hf_dataset.set_transform(hf_transform_to_torch)
         return hf_dataset
 
