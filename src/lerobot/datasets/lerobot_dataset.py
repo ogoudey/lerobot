@@ -488,8 +488,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
 
         # Check timestamps
-        timestamps = torch.tensor(list(self.hf_dataset["timestamp"])).numpy()
-        episode_indices = torch.tensor(list(self.hf_dataset["episode_index"])).numpy()
+        timestamps = torch.stack(self.hf_dataset["timestamp"]).numpy()
+        episode_indices = torch.stack(self.hf_dataset["episode_index"]).numpy()
         ep_data_index_np = {k: t.numpy() for k, t in self.episode_data_index.items()}
         check_timestamps_sync(timestamps, episode_indices, ep_data_index_np, self.fps, self.tolerance_s)
 
@@ -606,6 +606,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             hf_dataset = load_dataset("parquet", data_files=files, split="train")
 
         # TODO(aliberts): hf_dataset.set_format("torch")
+        hf_dataset.set_format(type="torch")
         hf_dataset.set_transform(hf_transform_to_torch)
         return hf_dataset
 
@@ -668,8 +669,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         query_timestamps = {}
         for key in self.meta.video_keys:
             if query_indices is not None and key in query_indices:
-                timestamps = list(self.hf_dataset.select(query_indices[key])["timestamp"])
-                query_timestamps[key] = torch.tensor(timestamps).tolist()
+                timestamps = self.hf_dataset.select(query_indices[key])["timestamp"]
+                query_timestamps[key] = torch.stack(timestamps).tolist()
             else:
                 query_timestamps[key] = [current_ts]
 
@@ -677,7 +678,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
     def _query_hf_dataset(self, query_indices: dict[str, list[int]]) -> dict:
         return {
-            key: torch.tensor(list(self.hf_dataset.select(q_idx)[key]))
+            key: torch.stack(self.hf_dataset.select(q_idx)[key])
             for key, q_idx in query_indices.items()
             if key not in self.meta.video_keys
         }
