@@ -596,10 +596,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         return fpaths
 
-    def hf_column_to_tensor(col):
-        """Convert a HuggingFace Column, list, or array to a PyTorch tensor."""
-        return torch.stack([torch.as_tensor(x) for x in col])
-
     def load_hf_dataset(self) -> datasets.Dataset:
         """hf_dataset contains all the observations, states, actions, rewards, etc."""
         if self.episodes is None:
@@ -610,17 +606,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             hf_dataset = load_dataset("parquet", data_files=files, split="train")
 
         # TODO(aliberts): hf_dataset.set_format("torch")
-        
-        def columns_to_tensors(batch):
-            out = {}
-            for k, v in batch.items():
-                if k in getattr(self.meta, "video_keys", []):
-                    out[k] = v  # leave videos as-is
-                else:
-                    out[k] = self.hf_column_to_tensor(v)
-            return out
-
-        hf_dataset.set_transform(columns_to_tensors)
+        hf_dataset.set_transform(hf_transform_to_torch)
         return hf_dataset
 
     def create_hf_dataset(self) -> datasets.Dataset:
