@@ -601,7 +601,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if self.episodes is None:
             path = str(self.root / "data")
             hf_dataset = load_dataset("parquet", data_dir=path, split="train")
+            print("hi")
         else:
+            print("hi2")
             files = [str(self.root / self.meta.get_data_file_path(ep_idx)) for ep_idx in self.episodes]
             hf_dataset = load_dataset("parquet", data_files=files, split="train")
 
