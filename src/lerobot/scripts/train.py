@@ -155,7 +155,7 @@ def train(cfg: TrainPipelineConfig):
 
     logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
     if cfg.env is not None:
-        logging.info(f"{cfg.env.task=}")
+        logging.info(f"{cfg.env.task}")
     logging.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
     logging.info(f"{dataset.num_frames=} ({format_big_number(dataset.num_frames)})")
     logging.info(f"{dataset.num_episodes=}")
