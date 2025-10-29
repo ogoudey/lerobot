@@ -607,6 +607,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         # TODO(aliberts): hf_dataset.set_format("torch")
         hf_dataset.set_transform(hf_transform_to_torch)
+        print(type(hf_dataset["timestamp"]))
         return hf_dataset
 
     def create_hf_dataset(self) -> datasets.Dataset:
