@@ -112,6 +112,8 @@ from lerobot.utils.wandb_utils import WandBLogger
 
 from lerobot.scripts.train import update_policy
 
+from camera_readers import CameraReader
+
 logger = logging.getLogger(__name__)
 
 def record_dataset(dataset_name="dataset3", camera_urls=["rtsp://192.168.0.159:8080/h264_ulaw.sdp", "rtsp://192.168.0.151:8080/h264_ulaw.sdp"]):
@@ -263,7 +265,7 @@ def record_dataset(dataset_name="dataset3", camera_urls=["rtsp://192.168.0.159:8
         robot.disconnect()
 
 
-def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-06/14-21-15_smolvla/checkpoints/last/pretrained_model", camera_urls=["rtsp://192.168.0.159:8080/h264_ulaw.sdp", "rtsp://192.168.0.151:8080/h264_ulaw.sdp"], bypass_input=False):
+def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/outputs/train/2025-09-06/14-21-15_smolvla/checkpoints/last/pretrained_model", camera_urls=["rtsp://192.168.0.159:8080/h264_ulaw.sdp", "rtsp://192.168.0.151:8080/h264_ulaw.sdp"], signal={"flag":"GO", "instruction":"Put the colored blocks in the cardboard box"}):
     """ Runs the SmolVLA policy at policy_path."""
     _init_rerun(session_name="smolvla")
     #policy_path = "lerobot/smolvla_base" # to test the base model (it's weird and ineffective)
@@ -305,17 +307,20 @@ def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/output
     logging.info("Cameras on.")
     input("[hit Enter]")
     robot = reset_bw_episode(robot, None)
+    instruction = signal["instruction"]
     try:
-        single_task=input("Instruction ([Enter] for 'Put the colored blocks in the cardboard box'):\n")
+        single_task=input(f"Instruction ([Enter] for {instruction}):\n")
         if single_task == "":
             single_task = "Put the colored blocks in the cardboard box"
+        
         while True:
             try:
-                while True:
+                while not signal["flag"] == "STOP":
+                    print(signal)
                     start_loop_t = time.perf_counter()
                     robot.get_observation()
                     printable_state = {name: round(robot.present_pos[name.split(".pos")[0]], 6) for i, name in enumerate(robot.action_features)}
-                    print("STATE:  ", printable_state)
+                    #print("STATE:  ", printable_state)
                     joints_deg = np.array([robot.present_pos[name.split(".pos")[0]] for name in robot.action_features], dtype=np.float32)
                     frame1 = webcam1_reader.frame
                     frame2 = webcam2_reader.frame
@@ -342,6 +347,8 @@ def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/output
                     log_rerun_data(observation_frame, action)
                     dt_s = time.perf_counter() - start_loop_t
                     busy_wait(1 / 30 - dt_s) # this is 1 / fps - dt_s
+                if signal["flag"] == "STOP":
+                    break
             except KeyboardInterrupt:
                 chat = input("New task? (^C to Exit, [Enter] to try the same task again)\n")
                 if not chat == "":
@@ -349,6 +356,8 @@ def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/output
                 robot = reset_bw_episode(robot, None)
                 smolvla_policy.reset()
                 input("[Enter]")
+        print("Leaving model inference...")
+        raise KeyboardInterrupt("Essentially a keyboard interrupt")
     except KeyboardInterrupt:
         webcam1_reader.stop()
         webcam2_reader.stop()
@@ -801,48 +810,16 @@ Joint calibration for the featured SO-101 is on [Github](https://github.com/ogou
         f.write(content)
     print(f"Wrote {filename} to current folder.")
 
-class CameraReader(Thread):
-    """ Class that provides a .frame and updates it as a parallel thread. """
-    def __init__(self, cap):
-        super().__init__()
-        self.cap = cap
-        #self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 512)
-        #self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 512)
-        #self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-        #self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        self.frame = None
-        self.running = True
-        
-        self.frame_updates = 0
-
-    def run(self):
-        while self.running:
-            ret, frame = self.cap.read()
-            if ret:
-                #self.frame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (320, 240)).copy()
-                #self.frame = cv2.resize(frame, (320, 240)).copy()
-                #self.frame = cv2.resize(frame, (512, 512)).copy()
-                self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).copy()
-                self.frame_updates += 1
-                #print("Grab?", self.cap.grab())
-                #print("\rUpdated frame x", self.frame_updates, end="\n")
-            else:
-                print("\rNo retrieved frame yet...")
-            time.sleep(0.001)  # small sleep to yield CPU
-
-    def stop(self):
-        self.running = False
-
-
 ### Dataset Wrangling
 # d = test.get_dataset(path="data/h485", repo_id"olingoudey/put_the_stuffed_animal_in_the_bowl") # PRovide root (relative path) and remote repo
 # test.write_dataset_card("data/h485/README.md")
 # d.push_to_hub() # to remote repo
 # d.pull_from_repo() # to local root, I think, since `root` is specified. If root folder doesn't exist, idk.
 
-
+def main_with_signal(signal):
+    if signal["flag"] == "STOP":
+        print("Trying to stop!")
+    test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/blocks_box/checkpoints/021000/pretrained_model", camera_urls=["rtsp://10.243.59.185:8080/h264_ulaw.sdp", "rtsp://10.243.126.188:8080/h264_ulaw.sdp"], signal=signal)
   
 def main():
     """ A repetoire of useful main functions: """
@@ -856,14 +833,17 @@ def main():
     
     # I "outsource" the train script
     
-    #record_dataset(dataset_name="stationary_mug", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
+    #record_dataset(dataset_name="morefun", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"]) # which is at olingoudey/...
     #teleoperate(teleop_config())
     
     #test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/stationary_env_3k/pretrained_model", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"])
     
-    test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/blocks_box/checkpoints/021000/pretrained_model", camera_urls=["rtsp://10.243.51.52:8080/h264_ulaw.sdp", "rtsp://10.243.115.110:8080/h264_ulaw.sdp"])
+    
+    
+    test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/blocks_box/checkpoints/021000/pretrained_model", camera_urls=["rtsp://10.243.59.185:8080/h264_ulaw.sdp", "rtsp://10.243.126.188:8080/h264_ulaw.sdp"])
 
     
 
 if __name__ == "__main__":
+    #main_with_signal({"flag":"STOP", "instruction": "STOP")
     main()
