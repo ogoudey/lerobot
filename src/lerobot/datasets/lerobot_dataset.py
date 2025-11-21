@@ -20,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import datasets
+print(datasets.__version__)
 import numpy as np
 import packaging.version
 import PIL.Image

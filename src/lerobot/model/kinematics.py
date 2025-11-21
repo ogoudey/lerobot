@@ -35,6 +35,7 @@ class RobotKinematics:
         try:
             import placo
         except ImportError as e:
+            print(e)
             raise ImportError(
                 "placo is required for RobotKinematics. "
                 "Please install the optional dependencies of `kinematics` in the package."

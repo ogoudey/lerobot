@@ -33,7 +33,6 @@ from lerobot.datasets.utils import DEFAULT_FEATURES
 from lerobot.policies.pretrained import PreTrainedPolicy
 from lerobot.robots import Robot
 
-
 def log_control_info(robot: Robot, dt_s, episode_index=None, frame_index=None, fps=None):
     log_items = []
     if episode_index is not None:
@@ -103,7 +102,7 @@ def predict_action(
     device: torch.device,
     use_amp: bool,
     task: str | None = None,
-    robot_type: str | None = None,
+    robot_type: str | None = None
 ):
     observation = copy(observation)
     with (

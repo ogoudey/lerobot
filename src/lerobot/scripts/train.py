@@ -155,12 +155,12 @@ def train(cfg: TrainPipelineConfig):
 
     logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
     if cfg.env is not None:
-        logging.info(f"{cfg.env.task=}")
-    logging.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
-    logging.info(f"{dataset.num_frames=} ({format_big_number(dataset.num_frames)})")
-    logging.info(f"{dataset.num_episodes=}")
-    logging.info(f"{num_learnable_params=} ({format_big_number(num_learnable_params)})")
-    logging.info(f"{num_total_params=} ({format_big_number(num_total_params)})")
+        logging.info(f"{cfg.env.task}")
+    logging.info(f"{cfg.steps} ({format_big_number(cfg.steps)})")
+    logging.info(f"{dataset.num_frames} ({format_big_number(dataset.num_frames)})")
+    logging.info(f"{dataset.num_episodes}")
+    logging.info(f"{num_learnable_params} ({format_big_number(num_learnable_params)})")
+    logging.info(f"{num_total_params} ({format_big_number(num_total_params)})")
 
     # create dataloader for offline training
     if hasattr(cfg.policy, "drop_n_last_frames"):
