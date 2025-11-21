@@ -116,7 +116,7 @@ from camera_readers import IPWebcamReader, LogitechReader
 
 logger = logging.getLogger(__name__)
 
-def record_dataset(dataset_name="dataset3", camera_urls=["rtsp://192.168.0.159:8080/h264_ulaw.sdp", "rtsp://192.168.0.151:8080/h264_ulaw.sdp"]):
+def record_dataset(dataset_name="dataset3", camera_refs=["rtsp://192.168.0.159:8080/h264_ulaw.sdp", "rtsp://192.168.0.151:8080/h264_ulaw.sdp"]):
     t_cfg = teleop_config()
 
     init_logging()
@@ -126,20 +126,20 @@ def record_dataset(dataset_name="dataset3", camera_urls=["rtsp://192.168.0.159:8
 
     teleop = make_teleoperator_from_config(t_cfg.teleop)
     robot = make_robot_from_config(t_cfg.robot)
-    input("Start cameras... [hit Enter to continue]")
+    input(f"Start cameras with references: {camera_refs}... [hit Enter to continue]")
 
-    webcam1_idx = 2
-    webcam2_idx = 4
+    webcam1_idx = camera_refs[0]
+    webcam2_idx = camera_refs[1]
     webcam1_cap = LogitechReader.get_cap(webcam1_idx)
     webcam2_cap = LogitechReader.get_cap(webcam2_idx)
     webcam1_reader = LogitechReader(webcam1_cap)
     webcam2_reader = LogitechReader(webcam2_cap)
     webcam1_reader.start()
     webcam2_reader.start()
-    
+
     """
-    webcam1_url = camera_urls[0]
-    webcam2_url = camera_urls[1]
+    webcam1_url = camera_refs[0]
+    webcam2_url = camera_refs[1]
     webcam1_cap = cv2.VideoCapture(webcam1_url)
     webcam2_cap = cv2.VideoCapture(webcam2_url)
     webcam1_reader = IPWebcamReader(webcam1_cap)
@@ -297,8 +297,8 @@ def test_policy(policy_path="/home/olin/Robotics/Projects/LeRobot/lerobot/output
     webcam2_url = camera_urls[1]
     webcam1_cap = cv2.VideoCapture(webcam1_url)
     webcam2_cap = cv2.VideoCapture(webcam2_url)
-    webcam1_reader = CameraReader(webcam1_cap)
-    webcam2_reader = CameraReader(webcam2_cap)
+    webcam1_reader = IPWebcamReader(webcam1_cap)
+    webcam2_reader = IPWebcamReader(webcam2_cap)
     webcam1_reader.start()
     webcam2_reader.start()
     print("Giving cameras time...")
@@ -846,7 +846,8 @@ def main():
     # I "outsource" the train script
 
     #teleoperate(teleop_config())
-    record_dataset(dataset_name="move_mouse", camera_urls=["rtsp://10.243.51.52:8080/h264_ulaw.sdp", "rtsp://10.243.115.110:8080/h264_ulaw.sdp"]) 
+    #record_dataset(dataset_name="move_mouse", camera_refs=["rtsp://10.243.51.52:8080/h264_ulaw.sdp", "rtsp://10.243.115.110:8080/h264_ulaw.sdp"]) 
+    record_dataset(dataset_name="blocks_box2", camera_refs=[2, 4]) 
     #teleoperate(teleop_config())
     
     #test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/stationary_env_3k/pretrained_model", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"])
@@ -854,7 +855,7 @@ def main():
 
     
     
-    test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/blocks_box/checkpoints/021000/pretrained_model", camera_urls=["rtsp://10.243.59.185:8080/h264_ulaw.sdp", "rtsp://10.243.126.188:8080/h264_ulaw.sdp"])
+    #test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/blocks_box/checkpoints/021000/pretrained_model", camera_urls=["rtsp://10.243.59.185:8080/h264_ulaw.sdp", "rtsp://10.243.126.188:8080/h264_ulaw.sdp"])
 
     
 

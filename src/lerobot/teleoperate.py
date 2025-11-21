@@ -147,6 +147,7 @@ def teleop_loop(
     webcam2_reader = cameras[1]
             
     start = time.perf_counter()
+    print("Teleop loop starting...")
     while True:
         loop_start = time.perf_counter()
         

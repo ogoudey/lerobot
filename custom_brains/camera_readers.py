@@ -38,25 +38,37 @@ class IPWebcamReader(Thread):
     def stop(self):
         self.running = False
 
-class suppress_stderr:
-    def __enter__(self):
-        self.null_fd = os.open(os.devnull, os.O_WRONLY)
-        self.stderr_fd = os.dup(2)
-        os.dup2(self.null_fd, 2)  # redirect stderr → /dev/null
-
-    def __exit__(self, *args):
-        os.dup2(self.stderr_fd, 2)  # restore stderr
-        os.close(self.null_fd)
-        os.close(self.stderr_fd)
-
 def open_cam(idx):
     cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 30)
+    print("Opening cam...")
     time.sleep(0.2)  # allow to apply
     return cap
+
+
+import ctypes
+import contextlib
+
+# Use C-level freopen to redirect stderr temporarily
+@contextlib.contextmanager
+def suppress_libjpeg_warnings():
+    """Suppress libjpeg 'Corrupt JPEG data' warnings in threads safely."""
+    libc = ctypes.CDLL(None)
+    # Save original stderr
+    original_stderr = libc.stderr
+    # Open /dev/null
+    devnull = open("/dev/null", "w")
+    # Replace stderr
+    libc.stderr = ctypes.c_void_p(devnull.fileno())
+    try:
+        yield
+    finally:
+        # Restore original stderr
+        libc.stderr = original_stderr
+        devnull.close()
 
 class LogitechReader(Thread):
     @staticmethod
@@ -82,7 +94,8 @@ class LogitechReader(Thread):
 
     def run(self):
         while self.running:
-            with suppress_stderr():
+
+            with suppress_libjpeg_warnings():
                 ret, frame = self.cap.read()
 
             if ret:
@@ -90,6 +103,7 @@ class LogitechReader(Thread):
                 self.frame_updates += 1
             else:
                 print("\rNo retrieved frame yet...")
-    
+            
+        
     def stop(self):
         self.running = False
