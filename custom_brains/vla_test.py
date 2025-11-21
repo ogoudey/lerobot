@@ -39,6 +39,9 @@ from lerobot.teleoperators.keyboard.configuration_keyboard import (
     KeyboardJointTeleopConfig,
     KeyboardEndEffectorTeleopConfig,
 )
+from lerobot.teleoperators.unity.configuration_unity import (
+    UnityEndEffectorTeleopConfig,
+)
 
 # --- LeRobot: teleoperate ---
 from lerobot.teleoperate import (
