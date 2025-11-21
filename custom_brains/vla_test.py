@@ -112,7 +112,7 @@ from lerobot.utils.wandb_utils import WandBLogger
 
 from lerobot.scripts.train import update_policy
 
-from camera_readers import CameraReader
+from camera_readers import IPWebcamReader, LogitechReader
 
 logger = logging.getLogger(__name__)
 
@@ -127,14 +127,26 @@ def record_dataset(dataset_name="dataset3", camera_urls=["rtsp://192.168.0.159:8
     teleop = make_teleoperator_from_config(t_cfg.teleop)
     robot = make_robot_from_config(t_cfg.robot)
     input("Start cameras... [hit Enter to continue]")
+
+    webcam1_idx = 2
+    webcam2_idx = 4
+    webcam1_cap = LogitechReader.get_cap(webcam1_idx)
+    webcam2_cap = LogitechReader.get_cap(webcam2_idx)
+    webcam1_reader = LogitechReader(webcam1_cap)
+    webcam2_reader = LogitechReader(webcam2_cap)
+    webcam1_reader.start()
+    webcam2_reader.start()
+    
+    """
     webcam1_url = camera_urls[0]
     webcam2_url = camera_urls[1]
     webcam1_cap = cv2.VideoCapture(webcam1_url)
     webcam2_cap = cv2.VideoCapture(webcam2_url)
-    webcam1_reader = CameraReader(webcam1_cap)
-    webcam2_reader = CameraReader(webcam2_cap)
+    webcam1_reader = IPWebcamReader(webcam1_cap)
+    webcam2_reader = IPWebcamReader(webcam2_cap)
     webcam1_reader.start()
     webcam2_reader.start()
+    """
     cameras = [webcam1_reader, webcam2_reader]
     print("Giving cameras some time...")
     time.sleep(2)
