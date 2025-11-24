@@ -19,8 +19,10 @@ from .teleoperator import Teleoperator
 def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
     if config.type == "keyboard":
         from .keyboard import KeyboardTeleop
-
         return KeyboardTeleop(config)
+    elif config.type == "unity":
+        from .unity import UnityEndEffectorTeleop
+        return UnityEndEffectorTeleop(config)
     elif config.type == "koch_leader":
         from .koch_leader import KochLeader
 

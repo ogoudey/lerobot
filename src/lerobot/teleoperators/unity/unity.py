@@ -110,9 +110,23 @@ class UnityEndEffectorTeleop(Teleoperator):
         assert kinematics_joint_order == self.joint_names
         assert self.kinematics.joint_names == self.joint_names
         
-        t = threading.Thread(target=pose_listener, args=[self.target_pos])
-        t.start()
+        self.t = threading.Thread(target=pose_listener, args=[self.target_pos])
+        self.t.start()
+        self.connected = True
 
+    def calibrate(self) -> None:
+        pass
+
+    @property
+    def is_calibrated(self) -> bool:
+        pass
+
+    @property
+    def feedback_features(self) -> dict:
+        return {}
+
+    def configure(self):
+        pass
 
     @property
     def action_features(self) -> dict:
@@ -121,6 +135,19 @@ class UnityEndEffectorTeleop(Teleoperator):
             "shape": (len(self.arm),),
             "names": {"motors": list(self.arm.motors)},
         }
+
+    def connect(self) -> None:
+        if self.is_connected:
+            raise DeviceAlreadyConnectedError(
+                "Keyboard is already connected. Do not run `robot.connect()` twice."
+            )
+
+        if UNITY_AVAILABLE:
+            logging.info("Unity is available - enabling local keyboard listener.")
+
+    @property
+    def is_connected(self) -> bool:
+        return UNITY_AVAILABLE and self.t.is_alive()
 
 
     def target_to_most_recent_pos(self):

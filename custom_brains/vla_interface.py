@@ -145,7 +145,7 @@ def record(robot: SO101Follower, teleop_config: TeleoperateConfig, dataset_name=
         batch_encoding_size=16,
     )
     teleop = make_teleoperator_from_config(teleop_config.teleop)
-    teleop_config.connect()
+    teleop.connect() # doesn't really do anything rn...
 
     try:
         robot = reset_bw_episode(robot, teleop)
@@ -952,7 +952,7 @@ Joint calibration for the featured SO-101 is on [Github](https://github.com/ogou
 
 def create_teleop(robot_config: SO101FollowerConfig, cls: UnityEndEffectorTeleopConfig | KeyboardEndEffectorTeleopConfig):
     if cls is UnityEndEffectorTeleopConfig:
-        teleop_config = TeleoperateConfig(
+        return TeleoperateConfig(
             robot = robot_config,
             teleop = UnityEndEffectorTeleopConfig(
                 id="teleop1",
@@ -964,8 +964,8 @@ def create_teleop(robot_config: SO101FollowerConfig, cls: UnityEndEffectorTeleop
             display_data=False,
             
         )
-    if cls is KeyboardEndEffectorTeleopConfig:
-        teleop_config = TeleoperateConfig(
+    elif cls is KeyboardEndEffectorTeleopConfig:
+        return TeleoperateConfig(
             robot = robot_config,
             teleop = KeyboardEndEffectorTeleopConfig(
                 id="teleop1",
@@ -979,7 +979,9 @@ def create_teleop(robot_config: SO101FollowerConfig, cls: UnityEndEffectorTeleop
         )
     else:
         raise Exception(f"Please provide a known Teleop class, not {cls}")
-    return teleop_config
+
+class NoRobotException(Exception):
+    pass
 
 class VLAInitializationError(Exception):
     pass
@@ -997,7 +999,7 @@ def create_body():
         robot = SO101Follower(robot_config)
         robot.connect()
     except Exception:
-        raise VLAInitializationError("Could not esablish connection with robot")
+        raise NoRobotException("Could not esablish connection with robot")
     return robot, robot_config
 
 class DatasetRecorder:
