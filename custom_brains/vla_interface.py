@@ -12,6 +12,7 @@ from threading import Thread
 import json
 import shutil
 from pathlib import Path
+from typing import List
 
 # --- Third-party ---
 import cv2
@@ -115,12 +116,119 @@ from lerobot.utils.wandb_utils import WandBLogger
 
 from lerobot.scripts.train import update_policy
 
-from camera_readers import IPWebcamReader, LogitechReader
+from camera_readers import WebcamReader, USBCameraReader
 
 logger = logging.getLogger(__name__)
 
+def record(robot: SO101Follower, teleop_config: TeleoperateConfig, dataset_name="testi", reader_assignments=dict[str, WebcamReader | USBCameraReader]):
+    cameras = list(reader_assignments.values())
+    for camera in cameras:
+        camera.start()
+        while camera.frame is None:
+            print(f"\rWaiting... on {camera}")
+            time.sleep(0.01)
+    robot.external_cameras = [camera.frame.shape for camera in cameras]
+    
+    action_features = hw_to_dataset_features(robot.action_features, "action", use_video=True)
+    obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_video=True)
+    dataset_features = {**action_features, **obs_features}
+
+    dataset = LeRobotDataset.create(
+        repo_id="olingoudey/" + dataset_name,
+        fps=teleop_config.fps,
+        root=Path('./data/' + dataset_name + str(random.randint(0, 1000))), # random numbers for safety
+        robot_type=robot.name,
+        features=dataset_features,
+        use_videos=True,
+        image_writer_processes=0,
+        image_writer_threads=4 * 2,
+        batch_encoding_size=16,
+    )
+    teleop = make_teleoperator_from_config(teleop_config.teleop)
+    teleop_config.connect()
+
+    try:
+        robot = reset_bw_episode(robot, teleop)
+        task = input("Task name?:")
+        #task = "Put the cube in the bowl" # preset for ease
+        input("[hit Enter]")
+        with VideoEncodingManager(dataset):
+            while True:
+                logging.info("New episode starting... ^C when done or to stop.")
+                try:
+                    try:
+                        teleop_loop(teleop, robot, teleop_config.fps, display_data=teleop_config.display_data, duration=teleop_config.teleop_time_s, cameras=cameras, dataset=dataset, task=task) # send IPwebcam to teleop loop 
+              
+                    except KeyboardInterrupt:
+                        chat = input("Save episode? (hit Enter/y for yes, n for no)")
+                        if chat == "" or strtobool(chat):
+                            logging.info("Saving episode (out)")
+                            dataset.save_episode()
+                            logging.info("Saved episode (out)")
+                            chat = input("Type task: (hit Enter/"" to skip)")
+                            if not chat == "":
+                                task = chat
+                        else:
+                            logging.info("Deleting episode (out)")
+                            dataset.clear_episode_buffer()
+                            logging.info("Deleted episode (out)")
+                    input("\nReset robot? (^C to exit)")
+                    robot = reset_bw_episode(robot, teleop)
+                    input("[hit Enter]")
+                    #new_task = input("\nNew task? (hit only Enter to use same task) (^C to exit)") # environment scenario updated manually
+                    #if new_task:
+                    #    task = new_task
+                except Exception as e:
+                    print("Robot connection error?:", e)
+                    print("Reconnecting... (Catch me!)")
+                    time.sleep(1)
+                    robot.disconnect()
+                    robot = make_robot_from_config(teleop_config.robot)
+                    robot.connect()
+                    input("Continue?")
+                    continue
+                
+    except KeyboardInterrupt:
+    
+        logging.info("\nExiting episode loop.")
+        try:
+            chat = input("Save dataset?\n")
+            if chat == "" or strtobool(chat):
+                chat = input("Push to hub?\n")
+                if chat == "" or strtobool(chat):
+                    write_dataset_card(dataset.root / "README.md")
+                    logging.info("Great. Pushing.")
+                    dataset.push_to_hub()
+                    logging.info("Pushed.")
+                else:
+                    logging.info("Great. Saved locally only.")    
+            else:
+                raise KeyboardInterrupt # goto V
+        except KeyboardInterrupt:
+            logging.info("\nDeleting dataset...")
+            # Remove temporary files
+            chat = input("Are you sure you want to delete?!")
+            if chat == "" or strtobool(chat):
+                dataset.clear_episode_buffer() 
+                if dataset.root and os.path.exists(dataset.root):
+                    shutil.rmtree(dataset.root)
+                    logging.info(f"Deleted dataset at /{dataset.root}")       
+        for camera in cameras:
+            camera.stop()
+        input("[hit Enter to catch me]\n")
+        for t in range(60, 0, -1):
+            print(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
+            time.sleep(0.05)
+        logging.info("\rBye!      ") 
+        
+        robot.bus.disable_torque()
+        if teleop_config.display_data:
+            rr.rerun_shutdown()
+        teleop.disconnect()
+        robot.disconnect()
+
 def record_dataset(dataset_name="dataset3", camera_refs=["rtsp://192.168.0.159:8080/h264_ulaw.sdp", "rtsp://192.168.0.151:8080/h264_ulaw.sdp"]):
-    t_cfg = teleop_config()
+    t_cfg = teleop_config(KeyboardEndEffectorTeleopConfig)
 
     init_logging()
     logging.info(pformat(asdict(t_cfg)))
@@ -133,10 +241,10 @@ def record_dataset(dataset_name="dataset3", camera_refs=["rtsp://192.168.0.159:8
 
     webcam1_idx = camera_refs[0]
     webcam2_idx = camera_refs[1]
-    webcam1_cap = LogitechReader.get_cap(webcam1_idx)
-    webcam2_cap = LogitechReader.get_cap(webcam2_idx)
-    webcam1_reader = LogitechReader(webcam1_cap)
-    webcam2_reader = LogitechReader(webcam2_cap)
+    webcam1_cap = USBCameraReader.get_cap(webcam1_idx)
+    webcam2_cap = USBCameraReader.get_cap(webcam2_idx)
+    webcam1_reader = USBCameraReader(webcam1_cap)
+    webcam2_reader = USBCameraReader(webcam2_cap)
     webcam1_reader.start()
     webcam2_reader.start()
 
@@ -189,9 +297,6 @@ def record_dataset(dataset_name="dataset3", camera_refs=["rtsp://192.168.0.159:8
         image_writer_threads=4 * 2,
         batch_encoding_size=16,
     )
-
-    teleop.connect()
-    robot.connect()
     
     try:
         robot = reset_bw_episode(robot, teleop)
@@ -776,7 +881,7 @@ def check_episode_stats(file_path, eps=1e-4):
     else:
         print("No anomalies found.")
  
-def teleop_config():
+def teleop_config(cls):
     """ Helper function to create a TeleoperateConfig """
     robot_config = SO101FollowerConfig(
         port="/dev/ttyACM0",
@@ -786,10 +891,23 @@ def teleop_config():
 
     follower = SO101Follower(robot_config)
     follower.connect()
-
+    """
     teleop_config = TeleoperateConfig(
         robot = robot_config,
         teleop = KeyboardEndEffectorTeleopConfig(
+            id="teleop1",
+            calibration_dir=Path("."),
+            mock=False,
+        ),
+        fps=30,
+        teleop_time_s=180.0,
+        display_data=False,
+        
+    )
+    """
+    teleop_config = TeleoperateConfig(
+        robot = robot_config,
+        teleop = UnityEndEffectorTeleopConfig(
             id="teleop1",
             calibration_dir=Path("."),
             mock=False,
@@ -831,6 +949,109 @@ Joint calibration for the featured SO-101 is on [Github](https://github.com/ogou
 # d.push_to_hub() # to remote repo
 # d.pull_from_repo() # to local root, I think, since `root` is specified. If root folder doesn't exist, idk.
 
+
+def create_teleop(robot_config: SO101FollowerConfig, cls: UnityEndEffectorTeleopConfig | KeyboardEndEffectorTeleopConfig):
+    if cls is UnityEndEffectorTeleopConfig:
+        teleop_config = TeleoperateConfig(
+            robot = robot_config,
+            teleop = UnityEndEffectorTeleopConfig(
+                id="teleop1",
+                calibration_dir=Path("."),
+                mock=False,
+            ),
+            fps=30,
+            teleop_time_s=180.0,
+            display_data=False,
+            
+        )
+    if cls is KeyboardEndEffectorTeleopConfig:
+        teleop_config = TeleoperateConfig(
+            robot = robot_config,
+            teleop = KeyboardEndEffectorTeleopConfig(
+                id="teleop1",
+                calibration_dir=Path("."),
+                mock=False,
+            ),
+            fps=30,
+            teleop_time_s=180.0,
+            display_data=False,
+            
+        )
+    else:
+        raise Exception(f"Please provide a known Teleop class, not {cls}")
+    return teleop_config
+
+class VLAInitializationError(Exception):
+    pass
+
+def create_body():
+    """
+    robot / policy / record?
+    """
+    try:
+        robot_config = SO101FollowerConfig(
+            port="/dev/ttyACM0",
+            id="normal",
+            use_degrees=False,
+        )
+        robot = SO101Follower(robot_config)
+        robot.connect()
+    except Exception:
+        raise VLAInitializationError("Could not esablish connection with robot")
+    return robot, robot_config
+
+class DatasetRecorder:
+    def __init__(self, robot, policy, dataset_name, reader_assignments):
+        self.robot = robot
+        self.policy = policy
+        self.dataset_name = dataset_name
+        self.reader_assignments = reader_assignments
+
+    def record(self):
+        record(self.robot, self.policy, self.dataset_name, self.reader_assignments)
+
+
+def create_teleop_recording_interaction(reader_assignments: dict | None = None, dataset_name: str | None = None):
+    robot, robot_config = create_body()
+    human_policy = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
+    if reader_assignments is None:
+        from camera_readers import WebcamReader, USBCameraReader
+        reader_assignments = {
+            "side": USBCameraReader(USBCameraReader.get_cap(2)),
+            "up": USBCameraReader(USBCameraReader.get_cap(4))
+        }
+    if dataset_name is None:
+        dataset_name = "test_record-11-24"
+    return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
+    
+
+class SmolVLARunner:
+    def __init__(self, policy, reader_assignments):
+        self.policy = policy
+        self.readers = reader_assignments
+
+def create_brains(reader_assignments: dict, policy_path: Path):
+    smolvla_policy = SmolVLAPolicy.from_pretrained(policy_path)
+    # assert that the policy's angles are such and such
+    if torch.cuda.is_available():
+        print("Running CUDA")
+        device = torch.device("cuda")
+    else:
+        print(f"Initializing weak brain...")
+        device = torch.device("cpu")
+    reader_angles = list(reader_assignments.keys())
+    
+    if "side" in reader_angles and "up" in reader_angles:
+        return SmolVLARunner(smolvla_policy, reader_assignments)
+    elif "on_body" in reader_angles:
+        VLAInitializationError("Make sure that the policy has on_body observation frame slot")
+    else:
+        VLAInitializationError("No SmolVLA found for camera angles.")
+    
+
+
+
+
 def main_with_signal(signal):
     if signal["flag"] == "STOP":
         print("Trying to stop!")
@@ -850,7 +1071,7 @@ def main():
 
     #teleoperate(teleop_config())
     #record_dataset(dataset_name="move_mouse", camera_refs=["rtsp://10.243.51.52:8080/h264_ulaw.sdp", "rtsp://10.243.115.110:8080/h264_ulaw.sdp"]) 
-    record_dataset(dataset_name="blocks_box2", camera_refs=[2, 4]) 
+    #record_dataset(dataset_name="blocks_box2", camera_refs=[2, 4]) 
     #teleoperate(teleop_config())
     
     #test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/stationary_env_3k/pretrained_model", camera_urls=["rtsp://10.243.112.170:8080/h264_ulaw.sdp", "rtsp://10.243.63.69:8080/h264_ulaw.sdp"])
@@ -859,8 +1080,8 @@ def main():
     
     
     #test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/blocks_box/checkpoints/021000/pretrained_model", camera_urls=["rtsp://10.243.59.185:8080/h264_ulaw.sdp", "rtsp://10.243.126.188:8080/h264_ulaw.sdp"])
-
-    
+    dataset_recorder = create_teleop_recording_interaction()
+    dataset_recorder.record()
 
 if __name__ == "__main__":
     #main_with_signal({"flag":"STOP", "instruction": "STOP")

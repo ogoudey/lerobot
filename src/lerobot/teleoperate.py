@@ -138,6 +138,8 @@ def teleop_loop(
     calculated_ee_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
     
     init_fk = calculated_ee_pos[:3, 3]
+    print(init_fk)
+
     if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
         teleop.target_pos["x"], teleop.target_pos["y"], teleop.target_pos["z"] = init_fk
 
@@ -173,6 +175,12 @@ def teleop_loop(
             target_gripper = action["gripper"]
             action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
             action["gripper.pos"] = target_gripper
+        elif type(teleop).__name__ == "UnityEndEffectorTeleop":
+            calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(joints_deg, calculated_ee_pos, position_weight, orientation_weight)
+            target_gripper = action["gripper"]
+            action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
+            action["gripper.pos"] = target_gripper
+            
         robot.send_action(action) # comment for mock?
         
         if dataset is not None and len(cameras) > 0:

@@ -4,7 +4,7 @@ import time
 import os
 import sys
 
-class IPWebcamReader(Thread):
+class WebcamReader(Thread):
     """ Class that provides a .frame and updates it as a parallel thread. """
     def __init__(self, cap):
         super().__init__()
@@ -70,7 +70,7 @@ def suppress_libjpeg_warnings():
         libc.stderr = original_stderr
         devnull.close()
 
-class LogitechReader(Thread):
+class USBCameraReader(Thread):
     @staticmethod
     def get_cap(idx):
         # OPEN AND REOPEN TRICK

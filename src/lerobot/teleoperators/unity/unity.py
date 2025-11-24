@@ -13,18 +13,47 @@ from .configuration_unity import UnityEndEffectorTeleopConfig
 from ...model.kinematics import RobotKinematics    
 
 
-UNITY_AVAILABLE = False
-try:
-    pass
-    # import line
+UNITY_AVAILABLE = True
+try: 
+    HOST = "127.0.0.1"
+    PORT = 5001
+
+    import socket
+    import threading
+    import json
 except ImportError:
-    keyboard = None
     UNITY_AVAILABLE = False
+    raise ImportError(f"Could not import Unity stuff: {e}")
 except Exception as e:
-    keyboard = None
     UNITY_AVAILABLE = False
     logging.info(f"Could not import Unity stuff: {e}")
+    raise Exception(f"Could not import Unity stuff: {e}")
 
+
+def pose_listener(shared):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, PORT))
+        s.listen()
+
+        print("Python server listening...")
+
+        conn, addr = s.accept()
+        print("Connected:", addr)
+
+        with conn:
+            while True:
+                data = conn.recv(1024)
+                if not data:
+                    break
+                transform = json.loads(data.decode().strip())
+                shared["x"] = transform["px"]
+                shared["y"] = transform["py"]
+                shared["z"] = transform["pz"]
+                shared["rx"] = transform["rx"]
+                shared["ry"] = transform["ry"]
+                shared["rz"] = transform["rz"]
+                shared["rw"] = transform["rw"]
+                shared["gripper"] = 0.0
 
 class UnityEndEffectorTeleop(Teleoperator):
     config_class = UnityEndEffectorTeleopConfig
@@ -70,6 +99,9 @@ class UnityEndEffectorTeleop(Teleoperator):
             "gripper": 0.0,
         }
         
+
+        self.target_pos = {"px":0.0,"py":0.0,"pz":0.0,"rx":0.0,"ry":0.0,"rz":0.0,"rw":1.0}
+        
         print(f"Loading URDF from: {self.urdf_path} (is file? {os.path.isfile(self.urdf_path)})")
         self.kinematics = RobotKinematics(self.urdf_path, 'gripper_frame_link', self.joint_names)
         
@@ -77,7 +109,11 @@ class UnityEndEffectorTeleop(Teleoperator):
         kinematics_joint_order = list(self.kinematics.robot.model.names)[2:]
         assert kinematics_joint_order == self.joint_names
         assert self.kinematics.joint_names == self.joint_names
-     
+        
+        t = threading.Thread(target=pose_listener, args=[self.target_pos])
+        t.start()
+
+
     @property
     def action_features(self) -> dict:
         return {
@@ -86,34 +122,6 @@ class UnityEndEffectorTeleop(Teleoperator):
             "names": {"motors": list(self.arm.motors)},
         }
 
-    @property
-    def feedback_features(self) -> dict:
-        return {}
-
-    @property
-    def is_connected(self) -> bool:
-        return UNITY_AVAILABLE
-
-    @property
-    def is_calibrated(self) -> bool:
-        pass
-
-    def connect(self) -> None:
-        if self.is_connected:
-            raise DeviceAlreadyConnectedError(
-                "Unity is already connected. Do not run `robot.connect()` twice."
-            )
-
-        if UNITY_AVAILABLE:
-            logging.info("Unity is available - doing something?.")
-        else:
-            logging.info("Unity not available - skipping local keyboard listener.")
-
-    def calibrate(self) -> None:
-        pass
-
-    def configure(self):
-        pass
 
     def target_to_most_recent_pos(self):
         # This should just get the last_pos, which is updated by a stream client of Unity.
