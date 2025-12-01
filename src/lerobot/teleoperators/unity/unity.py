@@ -174,3 +174,9 @@ class UnityEndEffectorTeleop(Teleoperator):
 
     def disconnect(self) -> None:
         pass
+
+if __name__ == "__main__":
+    cfg = UnityEndEffectorTeleopConfig()
+    ut = UnityEndEffectorTeleop(cfg)
+    ut.connect()
+    

@@ -115,12 +115,15 @@ from lerobot.utils.utils import (
 from lerobot.utils.wandb_utils import WandBLogger
 
 from lerobot.scripts.train import update_policy
-
+import sys
+custom_brains = Path("/home/olin/Robotics/Projects/LeRobot/lerobot/custom_brains")#import editable lerobot for VLA
+sys.path.append(custom_brains.as_posix())
+print(sys.path)
 from camera_readers import WebcamReader, USBCameraReader
 
 logger = logging.getLogger(__name__)
 
-def record(robot: SO101Follower, teleop_config: TeleoperateConfig, dataset_name="testi", reader_assignments=dict[str, WebcamReader | USBCameraReader]):
+def record(robot: SO101Follower, reader_assignments: dict[str, WebcamReader | USBCameraReader], teleop_config: TeleoperateConfig, dataset_name="testi"):
     cameras = list(reader_assignments.values())
     for camera in cameras:
         camera.start()
@@ -187,9 +190,7 @@ def record(robot: SO101Follower, teleop_config: TeleoperateConfig, dataset_name=
                     robot.connect()
                     input("Continue?")
                     continue
-                
     except KeyboardInterrupt:
-    
         logging.info("\nExiting episode loop.")
         try:
             chat = input("Save dataset?\n")
@@ -227,7 +228,7 @@ def record(robot: SO101Follower, teleop_config: TeleoperateConfig, dataset_name=
         teleop.disconnect()
         robot.disconnect()
 
-def test(robot, reader_assignments: dict[str, WebcamReader | USBCameraReader], device, policy: SmolVLAPolicy, signal={ "flag": "GO", "instruction": "Put the colored blocks in the cardboard box" }):
+def test(robot: SO101Follower, reader_assignments: dict[str, WebcamReader | USBCameraReader], device, policy: SmolVLAPolicy, signal={ "flag": "GO", "instruction": "Put the colored blocks in the cardboard box" }):
     _init_rerun(session_name="SmolVLA")
 
     cameras = list(reader_assignments.values())
@@ -243,9 +244,6 @@ def test(robot, reader_assignments: dict[str, WebcamReader | USBCameraReader], d
     robot = reset_bw_episode(robot, None)
     instruction = signal["instruction"]
     try:
-        single_task=input(f"Instruction ([Enter] for {instruction}):\n")
-        if single_task == "":
-            single_task = "Put the colored blocks in the cardboard box"
         
         while True:
             try:
@@ -266,7 +264,7 @@ def test(robot, reader_assignments: dict[str, WebcamReader | USBCameraReader], d
                         policy,
                         device=device,
                         use_amp=(device.type == "cuda"),
-                        task=single_task,
+                        task=instruction,
                         robot_type=robot.robot_type,
                     )
 
@@ -285,7 +283,7 @@ def test(robot, reader_assignments: dict[str, WebcamReader | USBCameraReader], d
                 if not chat == "":
                     single_task=chat   # whether this changes anything is unclear
                 robot = reset_bw_episode(robot, None)
-                smolvla_policy.reset()
+                policy.reset()
                 input("[Enter]")
         print("Leaving model inference...")
         raise KeyboardInterrupt("Essentially a keyboard interrupt")
@@ -324,6 +322,10 @@ def reset_bw_episode(robot, teleop):
         robot = make_robot_from_config(teleop_config().robot)
         robot.connect()
         return robot
+
+# ================================================== #
+#                 Factory Functions                  #
+# ================================================== #
 
 def create_teleop(robot_config: SO101FollowerConfig, cls: UnityEndEffectorTeleopConfig | KeyboardEndEffectorTeleopConfig):
     if cls is UnityEndEffectorTeleopConfig:
@@ -390,7 +392,7 @@ class DatasetRecorder:
 
 def create_teleop_recording_interaction(reader_assignments: dict | None = None, dataset_name: str | None = None):
     robot, robot_config = create_body()
-    human_policy = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
+    human_policy: TeleoperateConfig = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
     if reader_assignments is None:
         from camera_readers import WebcamReader, USBCameraReader
         reader_assignments = {
@@ -400,7 +402,23 @@ def create_teleop_recording_interaction(reader_assignments: dict | None = None, 
     if dataset_name is None:
         dataset_name = "test_record-11-24"
     return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
-    
+
+class MockRunner:
+    def __init__(self, teleop_config):
+        self.teleop_config = teleop_config
+    # import osmething other than teleop_loop
+    def run(self):
+        teleop = make_teleoperator_from_config(self.teleop_config.teleop)
+        teleop.connect()
+        while True:
+            teleop_loop(teleop, None, self.teleop_config.fps, display_data=self.teleop_config.display_data, duration=self.teleop_config.teleop_time_s, cameras=None, dataset=None, task=None) # send IPwebcam to teleop loop 
+
+def create_teleop_mock(reader_assignments: dict | None = None, dataset_name: str | None = None):
+    human_policy: TeleoperateConfig = create_teleop(None, UnityEndEffectorTeleopConfig)
+
+    if dataset_name is None:
+        dataset_name = "test_record-11-24"
+    return DatasetRecorder(None, human_policy, dataset_name, None)
 
 class SmolVLARunner:
     def __init__(self, device, policy: SmolVLAPolicy):
@@ -428,10 +446,6 @@ def create_brains(reader_assignments: dict, policy_path: Path):
         VLAInitializationError("Make sure that the policy has on_body observation frame slot")
     else:
         VLAInitializationError("No SmolVLA found for camera angles.")
-    
-
-
-
 
 def main_with_signal(signal):
     if signal["flag"] == "STOP":

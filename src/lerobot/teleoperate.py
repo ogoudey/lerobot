@@ -119,6 +119,7 @@ def rot_z(a):
 def teleop_loop(
     teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, cameras: list = [], dataset=None, task=None, verbose=False, 
 ):
+    
     if not robot.bus.is_connected:
         robot.bus.connect()
 
@@ -263,11 +264,6 @@ def teleoperate(cfg: TeleoperateConfig):
             rr.rerun_shutdown()
         teleop.disconnect()
         robot.disconnect()
-
-
-def main():
-    teleoperate()
-
 
 if __name__ == "__main__":
     main()
