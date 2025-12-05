@@ -125,7 +125,7 @@ class UnityEndEffectorTeleop(Teleoperator):
     config_class = UnityEndEffectorTeleopConfig
     name = "unity"
 
-    def __init__(self, config: UnityEndEffectorTeleopConfig):
+    def __init__(self, config: UnityEndEffectorTeleopConfig, with_ik=False):
         super().__init__(config)
         self.config = config
         self.robot_type = config.type
@@ -168,13 +168,14 @@ class UnityEndEffectorTeleop(Teleoperator):
             "gripper": 0.0,
         }
         """
-        print(f"Loading URDF from: {self.urdf_path} (is file? {os.path.isfile(self.urdf_path)})")
-        self.kinematics = RobotKinematics(self.urdf_path, 'gripper_frame_link', self.joint_names)
-        
-        # Checking order of joints so solver is aligned #
-        kinematics_joint_order = list(self.kinematics.robot.model.names)[2:]
-        assert kinematics_joint_order == self.joint_names
-        assert self.kinematics.joint_names == self.joint_names
+        if with_ik:
+            print(f"Loading URDF from: {self.urdf_path} (is file? {os.path.isfile(self.urdf_path)})")
+            self.kinematics = RobotKinematics(self.urdf_path, 'gripper_frame_link', self.joint_names)
+            
+            # Checking order of joints so solver is aligned #
+            kinematics_joint_order = list(self.kinematics.robot.model.names)[2:]
+            assert kinematics_joint_order == self.joint_names
+            assert self.kinematics.joint_names == self.joint_names
         
         #self.t = threading.Thread(target=pose_listener, args=[self.target_pos])
         self.t = threading.Thread(target=termux_listener, args=[self.target_pos])
