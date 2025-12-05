@@ -199,8 +199,8 @@ class UnityEndEffectorTeleop(Teleoperator):
     def action_features(self) -> dict:
         return {
             "dtype": "float32",
-            "shape": (len(self.arm),),
-            "names": {"motors": list(self.arm.motors)},
+            "shape": (len(list(self.target_pos.keys()))),
+            "names": {},
         }
 
     def connect(self) -> None:
