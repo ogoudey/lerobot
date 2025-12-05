@@ -395,22 +395,7 @@ def create_body(type:SO101Follower | KinovaGen3EndEffector=KinovaGen3EndEffector
             raise NoRobotException("Could not esablish connection with robot")
     return robot, robot_config
 
-class DatasetRecorder:
-    def __init__(self, robot, policy, dataset_name, reader_assignments):
-        self.robot = robot
-        self.policy = policy
-        self.dataset_name = dataset_name
-        self.reader_assignments = reader_assignments
 
-    def record(self):
-        if type(self.robot) == KinovaGen3EndEffector:
-            print(f"Robot {self.robot} is a KinovaGen3EndEffector, not using IK")
-            with_ik = False
-        else:
-            print(f"Robot is {self.robot}.")
-            print(f"Robot uses IK")
-            with_ik = True
-        record(self.robot, self.policy, self.dataset_name, self.reader_assignments, with_ik)
 
 def create_teleop_unrecorded_interaction():
     robot, robot_config = create_body()
@@ -448,18 +433,27 @@ def create_teleop_recording_kinova_interaction(reader_assignments: dict | None =
         dataset_name = "demo-12-5"
     return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
 
-class MockRunner:
-    def __init__(self, teleop_config):
-        self.teleop_config = teleop_config
-    # import osmething other than teleop_loop
-    def run(self):
-        teleop = make_teleoperator_from_config(self.teleop_config)
-        teleop.connect()
-
-        while True:
-            mock_teleop_loop(teleop) # send IPwebcam to teleop loop 
 
 
+# ============ Runners ============ #
+
+class DatasetRecorder:
+    """"""
+    def __init__(self, robot, policy, dataset_name, reader_assignments):
+        self.robot = robot
+        self.policy = policy
+        self.dataset_name = dataset_name
+        self.reader_assignments = reader_assignments
+
+    def record(self):
+        if type(self.robot) == KinovaGen3EndEffector:
+            print(f"Robot {self.robot} is a KinovaGen3EndEffector, not using IK")
+            with_ik = False
+        else:
+            print(f"Robot is {self.robot}.")
+            print(f"Robot uses IK")
+            with_ik = True
+        record(self.robot, self.policy, self.dataset_name, self.reader_assignments, with_ik)
 
 class RawTeleopRunner:
     def __init__(self, teleop_config):
@@ -469,6 +463,7 @@ class RawTeleopRunner:
     def run(self, robot, with_ik=False):
         teleop = make_teleoperator_from_config(self.teleop_config)
         teleop.connect()
+        input("Ready to enter loop?")
         while True:
             try:
                 if with_ik:
@@ -490,15 +485,26 @@ class RawTeleopRunner:
                 break   
 
 class MockRawRunner:
+    """No robot, no recording. Accepts UnityEndEffectorTeleopConfig."""
     def __init__(self, teleop_config):
         self.teleop_config = teleop_config
     # import osmething other than teleop_loop
     def run(self):
         teleop = make_teleoperator_from_config(self.teleop_config)
         teleop.connect()
+        input("Ready to enter loop?")
 
         while True:
             no_robot_loop(teleop, self.teleop_config.fps, self.teleop_config.teleop_time_s,) # send IPwebcam to teleop loop 
+
+class SmolVLARunner:
+    """Runs smolvla."""
+    def __init__(self, device, policy: SmolVLAPolicy):
+        self.device = device
+        self.policy = policy
+
+    def run(self, robot: SO101Follower, reader_assignments):
+        test(robot, reader_assignments, self.device, self.policy)
 
 def create_raw_teleop():
     unity_teleop: TeleoperateConfig = create_teleop(None, UnityEndEffectorTeleopConfig)
@@ -509,14 +515,6 @@ def create_raw_teleop_mock():
     unity_teleop: TeleoperateConfig = create_teleop(None, UnityEndEffectorTeleopConfig)
 
     return MockRawRunner(unity_teleop)
-
-class SmolVLARunner:
-    def __init__(self, device, policy: SmolVLAPolicy):
-        self.device = device
-        self.policy = policy
-
-    def run(self, robot: SO101Follower, reader_assignments):
-        test(robot, reader_assignments, self.device, self.policy)
 
 def create_brains(reader_assignments: dict, policy_path: Path):
     smolvla_policy = SmolVLAPolicy.from_pretrained(policy_path)
@@ -536,6 +534,10 @@ def create_brains(reader_assignments: dict, policy_path: Path):
         VLAInitializationError("Make sure that the policy has on_body observation frame slot")
     else:
         VLAInitializationError("No SmolVLA found for camera angles.")
+
+
+
+
 
 def main_with_signal(signal):
     if signal["flag"] == "STOP":

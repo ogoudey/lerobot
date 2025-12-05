@@ -44,7 +44,6 @@ def termux_listener(shared):
 
     theta_x = theta_y = theta_z = 0.0
     # (overriding target_pos)
-    shared = {'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
 
     while True:
         print(f"Waiting for first data")
@@ -158,7 +157,7 @@ class UnityEndEffectorTeleop(Teleoperator):
             "wrist_roll",
             "gripper",
         ]
-        self.target_pos = {'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
+        self.target_pos = {'gripper': 0.0, 'delta_x': 0.0, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
         """ # For SO101
         self.target_pos = {
             "x": 0.2,
@@ -208,6 +207,9 @@ class UnityEndEffectorTeleop(Teleoperator):
         print("Doing something connect-y here...")
         self.t.start()
         self.connected = True
+        while self.target_pos["x"] == 0.0: # until the x target moves from its initial pose (the teleop data is doing something...)
+            print(f"Waiting for teleop data...", end="\r")
+
         if UNITY_AVAILABLE:
             logging.info("Unity is available!")
 
