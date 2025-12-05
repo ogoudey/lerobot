@@ -50,7 +50,7 @@ lerobot-teleoperate \
 ```
 
 """
-
+from typing import Any
 import logging
 import time
 from dataclasses import asdict, dataclass
@@ -114,10 +114,168 @@ def rot_z(a):
 
 
 
+def mock_teleop_loop(teleop):
+    
+    position_weight, orientation_weight = 1.0, 0.1
 
+    observation = [0.0, 0.0, 0.0]
+
+    initial_joints_deg = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])   # convert to np_array for kinematics
+    kinematics_joint_order = list(teleop.kinematics.robot.model.names)[2:]
+    assert kinematics_joint_order == teleop.joint_names
+
+    calculated_ee_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
+    
+    init_fk = calculated_ee_pos[:3, 3]
+    print(init_fk)
+
+    teleop.kinematics.robot.update_kinematics()
+
+    while True:
+        loop_start = time.perf_counter()
+        joints_deg = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        action = teleop.get_action()
+
+        calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(joints_deg, calculated_ee_pos, position_weight, orientation_weight)
+        target_gripper = action["gripper"]
+        action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
+        action["gripper.pos"] = target_gripper
+
+        dt_s = time.perf_counter() - loop_start
+        busy_wait(1 / 30 - dt_s)
+
+def no_robot_loop(teleop, fps, duration):        
+    start = time.perf_counter()
+    print("No robot teleop loop starting...")
+    while True:
+        loop_start = time.perf_counter()
+        action = teleop.get_action()
+            
+        #print(f"Action: {action}", end="\r")
+        
+        dt_s = time.perf_counter() - loop_start
+        busy_wait(1 / 30 - dt_s)
+
+
+def unrecorded_teleop_loop_no_ik(
+    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None, verbose=False, 
+):
+
+
+    display_len = max(len(key) for key in robot.action_features)
+
+        
+    """ Calculate FK once for initial position """
+    observation = robot.get_observation() # set robot.present_pos
+    
+    start = time.perf_counter()
+    print("Teleop loop starting...")
+    while True:
+        loop_start = time.perf_counter()
+        action = teleop.get_action()
+        print(f"{action}")
+            
+        robot.send_action(action) # comment for mock?
+
+        
+        dt_s = time.perf_counter() - loop_start
+        busy_wait(1 / fps - dt_s)
+
+        loop_s = time.perf_counter() - loop_start
+        if verbose:
+            logging.info("\n" + "-" * (display_len + 10))
+
+            for motor, value in action.items():
+                logging.info(f"{motor:<{display_len}} | {value:>7.2f}")
+
+            logging.info(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
+            move_cursor_up(len(action) + 10)
+        if duration is not None and time.perf_counter() - start >= duration:
+            return
+
+
+def unrecorded_teleop_loop(
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, verbose=False, 
+):
+    if not robot.bus.is_connected:
+        robot.bus.connect()
+
+    display_len = max(len(key) for key in robot.action_features)
+
+    
+    position_weight, orientation_weight = 1.0, 0.1
+    
+    """ Calculate FK once for initial position """
+    observation = robot.get_observation() # set robot.present_pos
+    initial_joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])    # convert to np_array for kinematics
+    
+    # Check kinematics
+    kinematics_joint_order = list(teleop.kinematics.robot.model.names)[2:]
+    assert kinematics_joint_order == teleop.joint_names
+        
+    calculated_ee_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
+    
+    init_fk = calculated_ee_pos[:3, 3]
+    print(init_fk)
+
+    if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
+        teleop.target_pos["x"], teleop.target_pos["y"], teleop.target_pos["z"] = init_fk
+
+    teleop.kinematics.robot.update_kinematics()
+                
+    start = time.perf_counter()
+    print("Teleop loop starting...")
+    while True:
+        loop_start = time.perf_counter()
+        joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])
+        action = teleop.get_action()
+        print(f"{action}")
+        if display_data:
+            log_rerun_data(observation, action)
+        
+        if type(teleop).__name__ == "KeyboardEndEffectorTeleop":
+            """ Re-Calculate action """
+            target_ee_pos = np.array([action["x"], action["y"], action["z"]])
+            calculated_ee_pos[:3, 3] = target_ee_pos
+            # Now affect R
+            target_pitch = np.deg2rad(action["pitch"])   # in degrees
+            target_roll = np.deg2rad(action["roll"])
+            R_new = rot_y(target_pitch) @ rot_z(target_roll)
+
+            calculated_ee_pos[:3, :3] = R_new
+            
+            calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(joints_deg, calculated_ee_pos, position_weight, orientation_weight)
+            target_gripper = action["gripper"]
+            action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
+            action["gripper.pos"] = target_gripper
+        elif type(teleop).__name__ == "UnityEndEffectorTeleop":
+            target_ee_pos = np.array([action["x"], action["y"], action["z"]])
+            calculated_ee_pos[:3, 3] = target_ee_pos
+            calculated_new_joints_deg = teleop.kinematics.inverse_kinematics(joints_deg, calculated_ee_pos, position_weight, orientation_weight)
+            target_gripper = action["gripper"]
+            action = {name + '.pos': float(val) for name, val in zip(teleop.joint_names, calculated_new_joints_deg)} # convert back to action dict
+            action["gripper.pos"] = target_gripper
+            
+        robot.send_action(action) # comment for mock?
+
+        
+        dt_s = time.perf_counter() - loop_start
+        busy_wait(1 / fps - dt_s)
+
+        loop_s = time.perf_counter() - loop_start
+        if verbose:
+            logging.info("\n" + "-" * (display_len + 10))
+
+            for motor, value in action.items():
+                logging.info(f"{motor:<{display_len}} | {value:>7.2f}")
+
+            logging.info(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
+            move_cursor_up(len(action) + 10)
+        if duration is not None and time.perf_counter() - start >= duration:
+            return
 
 def teleop_loop(
-    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, cameras: list = [], dataset=None, task=None, verbose=False, 
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, task=None, verbose=False, 
 ):
     
     if not robot.bus.is_connected:
@@ -145,9 +303,6 @@ def teleop_loop(
         teleop.target_pos["x"], teleop.target_pos["y"], teleop.target_pos["z"] = init_fk
 
     teleop.kinematics.robot.update_kinematics()
-    
-    webcam1_reader = cameras[0]
-    webcam2_reader = cameras[1]
             
     start = time.perf_counter()
     print("Teleop loop starting...")
@@ -184,14 +339,15 @@ def teleop_loop(
             
         robot.send_action(action) # comment for mock?
         
-        if dataset is not None and len(cameras) > 0:
+        if dataset is not None:
+            frame = {
+                "observation.state": np.array(joints_deg, dtype=np.float32)   # robot state
+            }
+            for angle, reader in reader_assignments.items():
+                frame[f"observation.state.{angle}"] = reader.frame.copy()
+            frame["action"] = np.array(calculated_new_joints_deg, dtype=np.float32)
             dataset.add_frame(
-                frame={
-                    "observation.state": np.array(joints_deg, dtype=np.float32),   # robot state
-                    "observation.images.side": webcam1_reader.frame.copy(),
-                    "observation.images.up": webcam2_reader.frame.copy(),
-                    "action": np.array(calculated_new_joints_deg, dtype=np.float32),
-                },
+                frame,
                 task=task,        # or whatever
             )
         
@@ -209,7 +365,38 @@ def teleop_loop(
             move_cursor_up(len(action) + 10)
         if duration is not None and time.perf_counter() - start >= duration:
             return
-    
+
+def teleop_loop_no_ik(
+    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, task=None, verbose=False, 
+):
+    print(f"In no IK loop...")
+            
+    start = time.perf_counter()
+    print("Teleop loop starting...")
+    while True:
+        loop_start = time.perf_counter()
+        
+        observation = robot.get_observation()
+        action = teleop.get_action()
+            
+        robot.send_action(action) # comment for mock?
+        
+        if dataset is not None:
+            frame = {
+                "observation.state": np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)   # robot state
+            }
+            for angle, reader in reader_assignments.items():
+                frame[f"observation.state.{angle}"] = reader.frame.copy()
+            frame["action"] = np.array(action.values(), dtype=np.float32)
+            dataset.add_frame(
+                frame,
+                task=task,        # or whatever
+            )
+        
+        dt_s = time.perf_counter() - loop_start
+        busy_wait(1 / fps - dt_s)
+
+        loop_s = time.perf_counter() - loop_start
         
 def test_record_loop(dataset):
     webcam1_cap = cv2.VideoCapture(0)

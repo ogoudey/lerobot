@@ -29,7 +29,69 @@ except Exception as e:
     logging.info(f"Could not import Unity stuff: {e}")
     raise Exception(f"Could not import Unity stuff: {e}")
 
+def termux_listener(shared):
+    UDP_PORT = 5005
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("", UDP_PORT))
+
+    print(f"Listening on UDP port {UDP_PORT}...")
+
+    prev_time = None
+
+    vel_x = vel_y = vel_z = 0.0
+    pos_x = pos_y = pos_z = 0.0
+
+    theta_x = theta_y = theta_z = 0.0
+    # (overriding target_pos)
+    shared = {'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
+
+    while True:
+        
+        data, addr = sock.recvfrom(4096)
+        msg = json.loads(data.decode())
+        
+        try:
+            print("Received:", msg)
+            now = time.time()
+            if prev_time is None:
+                prev_time = now
+                continue
+            dt = now - prev_time
+            prev_time = now
+
+            # Delta
+            accel_x = msg["ax"]
+            accel_y = msg["ay"]
+            accel_z = msg["az"]
+
+            # output deltas
+            delta_x = accel_x * dt*dt /2
+            delta_y = accel_y * dt*dt /2
+            delta_z = accel_z * dt*dt /2
+
+            # Theta
+            gyro_x = msg["gx"]
+            gyro_y = msg["gy"]
+            gyro_z = msg["gz"]
+
+
+            theta_x = gyro_x * dt
+            theta_y = gyro_y * dt
+            theta_z = gyro_z * dt
+
+            shared["delta_x"] = delta_x
+            shared["delta_y"] = delta_y
+            shared["delta_z"] = delta_z
+            shared["theta_x"] = theta_x
+            shared["theta_y"] = theta_y
+            shared["theta_z"] = theta_z
+            shared["gripper"] = 0.0
+            print("Calculated:", shared)
+        except KeyError:
+            print(f"{msg} is not the expected transform format...")
+
+# Unity pose listener
 def pose_listener(shared):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
@@ -39,6 +101,7 @@ def pose_listener(shared):
 
         conn, addr = s.accept()
         print("Connected:", addr)
+        # 'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
 
         with conn:
             while True:
@@ -46,14 +109,18 @@ def pose_listener(shared):
                 if not data:
                     break
                 transform = json.loads(data.decode().strip())
-                shared["x"] = transform["px"]
-                shared["y"] = transform["py"]
-                shared["z"] = transform["pz"]
-                shared["rx"] = transform["rx"]
-                shared["ry"] = transform["ry"]
-                shared["rz"] = transform["rz"]
-                shared["rw"] = transform["rw"]
-                shared["gripper"] = 0.0
+                print(f"Updating local data: {transform}")
+                try:
+                    shared["x"] = transform["px"]
+                    shared["y"] = transform["py"]
+                    shared["z"] = transform["pz"]
+                    shared["rx"] = transform["rx"]
+                    shared["ry"] = transform["ry"]
+                    shared["rz"] = transform["rz"]
+                    shared["rw"] = transform["rw"]
+                    shared["gripper"] = 0.0
+                except KeyError:
+                    print(f"{transform} is not the expected transform format...")
 
 class UnityEndEffectorTeleop(Teleoperator):
     config_class = UnityEndEffectorTeleopConfig
@@ -89,7 +156,8 @@ class UnityEndEffectorTeleop(Teleoperator):
             "wrist_roll",
             "gripper",
         ]
-
+        self.target_pos = {'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
+        """ # For SO101
         self.target_pos = {
             "x": 0.2,
             "y": 0,
@@ -98,10 +166,7 @@ class UnityEndEffectorTeleop(Teleoperator):
             "pitch": 90.0,
             "gripper": 0.0,
         }
-        
-
-        self.target_pos = {"px":0.0,"py":0.0,"pz":0.0,"rx":0.0,"ry":0.0,"rz":0.0,"rw":1.0}
-        
+        """
         print(f"Loading URDF from: {self.urdf_path} (is file? {os.path.isfile(self.urdf_path)})")
         self.kinematics = RobotKinematics(self.urdf_path, 'gripper_frame_link', self.joint_names)
         
@@ -110,9 +175,9 @@ class UnityEndEffectorTeleop(Teleoperator):
         assert kinematics_joint_order == self.joint_names
         assert self.kinematics.joint_names == self.joint_names
         
-        self.t = threading.Thread(target=pose_listener, args=[self.target_pos])
-        self.t.start()
-        self.connected = True
+        #self.t = threading.Thread(target=pose_listener, args=[self.target_pos])
+        self.t = threading.Thread(target=termux_listener, args=[self.target_pos])
+        
 
     def calibrate(self) -> None:
         pass
@@ -137,35 +202,23 @@ class UnityEndEffectorTeleop(Teleoperator):
         }
 
     def connect(self) -> None:
-        if self.is_connected:
-            raise DeviceAlreadyConnectedError(
-                "Keyboard is already connected. Do not run `robot.connect()` twice."
-            )
-
+        # Open socket to Unity
+        print("Doing something connect-y here...")
+        self.t.start()
+        self.connected = True
         if UNITY_AVAILABLE:
-            logging.info("Unity is available - enabling local keyboard listener.")
+            logging.info("Unity is available!")
 
     @property
     def is_connected(self) -> bool:
-        return UNITY_AVAILABLE and self.t.is_alive()
-
-
-    def target_to_most_recent_pos(self):
-        # This should just get the last_pos, which is updated by a stream client of Unity.
-        # Unity: serves a pose
-        self.target_pos = self.target_pos
+        return self.connected
 
     def get_action(self) -> dict[str, Any]:
-        print("[DEBUG] get_action() called")
 
         if not self.is_connected:
             raise DeviceNotConnectedError(
                 "Unity is not connected. You need to run `connect()` before `get_action()`."
             )
-
-        self.target_to_most_recent_pos()
-
-       
 
         return self.target_pos
 
@@ -178,5 +231,5 @@ class UnityEndEffectorTeleop(Teleoperator):
 if __name__ == "__main__":
     cfg = UnityEndEffectorTeleopConfig()
     ut = UnityEndEffectorTeleop(cfg)
-    ut.connect()
     
+

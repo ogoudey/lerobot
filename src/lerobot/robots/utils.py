@@ -43,7 +43,6 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         return LeKiwi(config)
     elif config.type == "stretch3":
         from .stretch3 import Stretch3Robot
-
         return Stretch3Robot(config)
     elif config.type == "viperx":
         from .viperx import ViperX
@@ -61,6 +60,11 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         from .bi_so100_follower import BiSO100Follower
 
         return BiSO100Follower(config)
+    elif config.type == "kinova_gen3_end_effector":
+        print("Improting... robot...")
+        from .kinova_gen3 import KinovaGen3EndEffector
+        
+        return KinovaGen3EndEffector(config)
     elif config.type == "mock_robot":
         from tests.mocks.mock_robot import MockRobot
 

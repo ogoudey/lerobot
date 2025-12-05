@@ -1,0 +1,2 @@
+from .config_kinova_gen3_end_effector import KinovaGen3EndEffectorConfig
+from .kinova_gen3_end_effector import KinovaGen3EndEffector

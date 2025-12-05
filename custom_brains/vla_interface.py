@@ -27,9 +27,10 @@ from lerobot.robots import (
     RobotConfig,
     make_robot_from_config,
     so101_follower,
+    kinova_gen3,
 )
 from lerobot.robots.so101_follower import SO101FollowerConfig, SO101Follower
-
+from lerobot.robots.kinova_gen3 import KinovaGen3EndEffectorConfig, KinovaGen3EndEffector
 # --- LeRobot: teleoperators ---
 from lerobot.teleoperators import (
     Teleoperator,
@@ -48,7 +49,12 @@ from lerobot.teleoperators.unity.configuration_unity import (
 from lerobot.teleoperate import (
     TeleoperateConfig,
     teleop_loop,
+    teleop_loop_no_ik,
+    mock_teleop_loop,
     test_record_loop,
+    unrecorded_teleop_loop,
+    unrecorded_teleop_loop_no_ik,
+    no_robot_loop,
 )
 
 # --- LeRobot: policies ---
@@ -123,7 +129,7 @@ from camera_readers import WebcamReader, USBCameraReader
 
 logger = logging.getLogger(__name__)
 
-def record(robot: SO101Follower, reader_assignments: dict[str, WebcamReader | USBCameraReader], teleop_config: TeleoperateConfig, dataset_name="testi"):
+def record(robot: SO101Follower | KinovaGen3EndEffector, teleop_config: TeleoperateConfig, dataset_name, reader_assignments: dict[str, WebcamReader | USBCameraReader], with_ik=False):
     cameras = list(reader_assignments.values())
     for camera in cameras:
         camera.start()
@@ -147,7 +153,8 @@ def record(robot: SO101Follower, reader_assignments: dict[str, WebcamReader | US
         image_writer_threads=4 * 2,
         batch_encoding_size=16,
     )
-    teleop = make_teleoperator_from_config(teleop_config.teleop)
+    teleop = make_teleoperator_from_config(teleop_config)
+    print(f"TELEOP: {teleop}, IK?: {with_ik}")
     teleop.connect() # doesn't really do anything rn...
 
     try:
@@ -160,8 +167,11 @@ def record(robot: SO101Follower, reader_assignments: dict[str, WebcamReader | US
                 logging.info("New episode starting... ^C when done or to stop.")
                 try:
                     try:
-                        teleop_loop(teleop, robot, teleop_config.fps, display_data=teleop_config.display_data, duration=teleop_config.teleop_time_s, cameras=cameras, dataset=dataset, task=task) # send IPwebcam to teleop loop 
-              
+                        if with_ik:
+                            teleop_loop(teleop, robot, teleop_config.fps, display_data=teleop_config.display_data, duration=teleop_config.teleop_time_s, reader_assignments=reader_assignments, dataset=dataset, task=task) # send IPwebcam to teleop loop 
+                        else:
+                            teleop_loop_no_ik(teleop, robot, teleop_config.fps, duration=teleop_config.teleop_time_s, reader_assignments=reader_assignments, dataset=dataset, task=task) # send IPwebcam to teleop loop 
+ 
                     except KeyboardInterrupt:
                         chat = input("Save episode? (hit Enter/y for yes, n for no)")
                         if chat == "" or strtobool(chat):
@@ -186,7 +196,6 @@ def record(robot: SO101Follower, reader_assignments: dict[str, WebcamReader | US
                     print("Reconnecting... (Catch me!)")
                     time.sleep(1)
                     robot.disconnect()
-                    robot = make_robot_from_config(teleop_config.robot)
                     robot.connect()
                     input("Continue?")
                     continue
@@ -301,6 +310,9 @@ def test(robot: SO101Follower, reader_assignments: dict[str, WebcamReader | USBC
 def reset_bw_episode(robot, teleop):
     """ Robot reset function - needed? """
     print("Resetting position")
+    if type(robot) == KinovaGen3EndEffector:
+        robot.move_to_home_position()
+        return robot
     try:
         robot.reset_position()
         print("robot reset...")
@@ -329,20 +341,11 @@ def reset_bw_episode(robot, teleop):
 
 def create_teleop(robot_config: SO101FollowerConfig, cls: UnityEndEffectorTeleopConfig | KeyboardEndEffectorTeleopConfig):
     if cls is UnityEndEffectorTeleopConfig:
-        return TeleoperateConfig(
-            robot = robot_config,
-            teleop = UnityEndEffectorTeleopConfig(
-                id="teleop1",
-                calibration_dir=Path("."),
-                mock=False,
-            ),
-            fps=30,
-            teleop_time_s=180.0,
-            display_data=False,
+        return UnityEndEffectorTeleopConfig(
             
         )
     elif cls is KeyboardEndEffectorTeleopConfig:
-        return TeleoperateConfig(
+        return KeyboardEndEffectorTeleopConfig(
             robot = robot_config,
             teleop = KeyboardEndEffectorTeleopConfig(
                 id="teleop1",
@@ -363,20 +366,31 @@ class NoRobotException(Exception):
 class VLAInitializationError(Exception):
     pass
 
-def create_body():
+def create_body(type:SO101Follower | KinovaGen3EndEffector=KinovaGen3EndEffector):
     """
     robot / policy / record?
     """
-    try:
-        robot_config = SO101FollowerConfig(
-            port="/dev/ttyACM0",
-            id="normal",
-            use_degrees=False,
-        )
-        robot = SO101Follower(robot_config)
-        robot.connect()
-    except Exception:
-        raise NoRobotException("Could not esablish connection with robot")
+    if type == SO101Follower:
+        try:
+            robot_config = SO101FollowerConfig(
+                port="/dev/ttyACM0",
+                id="normal",
+                use_degrees=False,
+            )
+            robot = SO101Follower(robot_config)
+            robot.connect()
+        except Exception:
+            raise NoRobotException("Could not esablish connection with robot")
+    elif type == KinovaGen3EndEffector:
+        try:
+            robot_config = KinovaGen3EndEffectorConfig(
+                #stuff
+            )
+            robot = KinovaGen3EndEffector(robot_config)
+            print(f"Robot created. Connecting...")
+            robot.connect()
+        except Exception:
+            raise NoRobotException("Could not esablish connection with robot")
     return robot, robot_config
 
 class DatasetRecorder:
@@ -387,11 +401,26 @@ class DatasetRecorder:
         self.reader_assignments = reader_assignments
 
     def record(self):
-        record(self.robot, self.policy, self.dataset_name, self.reader_assignments)
+        if type(self.robot) == KinovaGen3EndEffector:
+            print(f"Robot {self.robot} is a KinovaGen3EndEffector, not using IK")
+            with_ik = False
+        else:
+            print(f"Robot is {self.robot}.")
+            print(f"Robot uses IK")
+            with_ik = True
+        record(self.robot, self.policy, self.dataset_name, self.reader_assignments, with_ik)
+
+def create_teleop_unrecorded_interaction():
+    robot, robot_config = create_body()
+    robot.configure()
+    human_policy = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
+    r = RawTeleopRunner(human_policy)
+    r.run(robot)
 
 
 def create_teleop_recording_interaction(reader_assignments: dict | None = None, dataset_name: str | None = None):
     robot, robot_config = create_body()
+    robot.configure()
     human_policy: TeleoperateConfig = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
     if reader_assignments is None:
         from camera_readers import WebcamReader, USBCameraReader
@@ -403,22 +432,81 @@ def create_teleop_recording_interaction(reader_assignments: dict | None = None, 
         dataset_name = "test_record-11-24"
     return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
 
+def create_teleop_recording_kinova_interaction(reader_assignments: dict | None = None, dataset_name: str | None = None):
+    robot, robot_config = create_body()
+    robot.configure()
+    human_policy: TeleoperateConfig = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
+    if reader_assignments is None:
+        from camera_readers import WebcamReader, USBCameraReader
+        reader_assignments = {
+            "front": USBCameraReader(USBCameraReader.get_cap(6)),
+            "onboard": WebcamReader(WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color"))
+        }
+    if dataset_name is None:
+        dataset_name = "demo-12-5"
+    return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
+
 class MockRunner:
     def __init__(self, teleop_config):
         self.teleop_config = teleop_config
     # import osmething other than teleop_loop
     def run(self):
-        teleop = make_teleoperator_from_config(self.teleop_config.teleop)
+        teleop = make_teleoperator_from_config(self.teleop_config)
+        teleop.connect()
+
+        while True:
+            mock_teleop_loop(teleop) # send IPwebcam to teleop loop 
+
+
+
+class RawTeleopRunner:
+    def __init__(self, teleop_config):
+        self.teleop_config = teleop_config
+        
+    # import osmething other than teleop_loop
+    def run(self, robot, with_ik=False):
+        teleop = make_teleoperator_from_config(self.teleop_config)
         teleop.connect()
         while True:
-            teleop_loop(teleop, None, self.teleop_config.fps, display_data=self.teleop_config.display_data, duration=self.teleop_config.teleop_time_s, cameras=None, dataset=None, task=None) # send IPwebcam to teleop loop 
+            try:
+                if with_ik:
+                    unrecorded_teleop_loop(teleop, robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.teleop_time_s, verbose=False) # send IPwebcam to teleop loop 
+                else:
+                    unrecorded_teleop_loop_no_ik(teleop, robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.teleop_time_s, verbose=False) # send IPwebcam to teleop loop                     
+            except KeyboardInterrupt:
+                input("[hit Enter to catch me]\n")
+                for t in range(60, 0, -1):
+                    print(f"\r\Dropping in...! {t/20:.1f}s", end="", flush=True)
+                    time.sleep(0.05)
+                logging.info("\rBye!      ") 
+                
+                robot.bus.disable_torque()
+                if self.teleop_config.display_data:
+                    rr.rerun_shutdown()
+                teleop.disconnect()
+                robot.disconnect()
+                break   
 
-def create_teleop_mock(reader_assignments: dict | None = None, dataset_name: str | None = None):
-    human_policy: TeleoperateConfig = create_teleop(None, UnityEndEffectorTeleopConfig)
+class MockRawRunner:
+    def __init__(self, teleop_config):
+        self.teleop_config = teleop_config
+    # import osmething other than teleop_loop
+    def run(self):
+        teleop = make_teleoperator_from_config(self.teleop_config)
+        teleop.connect()
 
-    if dataset_name is None:
-        dataset_name = "test_record-11-24"
-    return DatasetRecorder(None, human_policy, dataset_name, None)
+        while True:
+            no_robot_loop(teleop, self.teleop_config.fps, self.teleop_config.teleop_time_s,) # send IPwebcam to teleop loop 
+
+def create_raw_teleop():
+    unity_teleop: TeleoperateConfig = create_teleop(None, UnityEndEffectorTeleopConfig)
+    return RawTeleopRunner(unity_teleop)
+
+def create_raw_teleop_mock():
+    
+    unity_teleop: TeleoperateConfig = create_teleop(None, UnityEndEffectorTeleopConfig)
+
+    return MockRawRunner(unity_teleop)
 
 class SmolVLARunner:
     def __init__(self, device, policy: SmolVLAPolicy):
@@ -475,7 +563,7 @@ def main():
     
     
     #test_policy("/home/mulip-guest/LeRobot/lerobot/outputs/blocks_box/checkpoints/021000/pretrained_model", camera_urls=["rtsp://10.243.59.185:8080/h264_ulaw.sdp", "rtsp://10.243.126.188:8080/h264_ulaw.sdp"])
-    dataset_recorder = create_teleop_recording_interaction()
+    dataset_recorder = create_teleop_recording_kinova_interaction()
     dataset_recorder.record()
 
 if __name__ == "__main__":

@@ -6,6 +6,13 @@ import sys
 
 class WebcamReader(Thread):
     """ Class that provides a .frame and updates it as a parallel thread. """
+    @staticmethod
+    def get_cap(rstp_url):
+        # OPEN AND REOPEN TRICK
+        cap = cv2.VideoCapture(rstp_url)
+        time.sleep(0.2)
+        return cap
+
     def __init__(self, cap):
         super().__init__()
         self.cap = cap
@@ -70,6 +77,12 @@ def suppress_libjpeg_warnings():
         libc.stderr = original_stderr
         devnull.close()
 
+
+#
+# v4l2-ctl --list-devices
+#
+# v4l2-ctl -d /dev/video{X} --list-formats
+#
 class USBCameraReader(Thread):
     @staticmethod
     def get_cap(idx):
@@ -107,3 +120,20 @@ class USBCameraReader(Thread):
         
     def stop(self):
         self.running = False
+
+def main():
+    import matplotlib.pyplot as plt
+
+    #cap = USBCameraReader.get_cap(6)
+    cap = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
+    print(f"Got cap: {cap}")
+    ret, frame = cap.read()
+    if ret:
+        # Convert BGR → RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        plt.imshow(frame_rgb)
+        plt.axis('off')
+        plt.show()
+
+if __name__ == "__main__":
+    main()
