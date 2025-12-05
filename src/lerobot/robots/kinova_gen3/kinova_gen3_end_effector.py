@@ -38,7 +38,7 @@ class KinovaGen3EndEffector(Robot):
     def __init__(self, config: KinovaGen3EndEffectorConfig):
         super().__init__(config)
         self.goal_position = {"delta_x": 0.0, "delta_y": 0.0, "delta_z": 0.0, "theta_x": 0.0, "theta_y": 0.0, "theta_z": 0.0, "gripper": 0.0}
-    
+        self.config = config
     def ee_writer(self):
         print(f"Importing utilities")
         from . import utilities
@@ -84,13 +84,8 @@ class KinovaGen3EndEffector(Robot):
         Define action features for end-effector control.
         Returns dictionary with dtype, shape, and names.
         """
-        return {
-            "dtype": "float32",
-            "shape": (7,),
-            "names": {"delta_x": 0, "delta_y": 1, "delta_z": 2, "theta_x": 3, "theta_y": 4, "theta_z": 5, "gripper": 6},
-        }
-
-
+        
+        return self._motors_ft
 
     def calibrate(self):
         pass
@@ -103,20 +98,28 @@ class KinovaGen3EndEffector(Robot):
 
     @property
     def _motors_ft(self) -> dict[str, type]:
-        return {f"{motor}.pos": float for motor in {"motors": 12}}
+        return {
+            "l0": float,
+            "l1": float,
+            "l2": float,
+            "l3": float,
+            "l4": float,
+            "l5": float,
+            "l6": float
+        }
 
     @property
     def _cameras_ft(self) -> dict[str, tuple]:
-        return dict() # change to onboard camera width?
+
+        return {
+            "front": (480, 640, 3),
+            "onboard": (720, 1280, 3)
+        } # change to onboard camera width?
         
 
     @property
     def observation_features(self) -> dict[str, type | tuple]:
         return {**self._motors_ft, **self._cameras_ft}
-
-    @property
-    def action_features(self) -> dict[str, type]:
-        return self._motors_ft
 
     def get_observation(self):
         # Read arm position

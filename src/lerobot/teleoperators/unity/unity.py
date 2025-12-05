@@ -47,7 +47,7 @@ def termux_listener(shared):
     shared = {'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
 
     while True:
-        
+        print(f"Waiting for first data")
         data, addr = sock.recvfrom(4096)
         msg = json.loads(data.decode())
         
@@ -130,7 +130,9 @@ class UnityEndEffectorTeleop(Teleoperator):
         super().__init__(config)
         self.config = config
         self.robot_type = config.type
-
+        self.fps = 30
+        self.display_data = False
+        self.teleop_time_s = 400
         self.event_queue = Queue()
         self.current_pressed = {}
         self.listener = None

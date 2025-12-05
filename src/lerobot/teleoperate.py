@@ -158,18 +158,17 @@ def no_robot_loop(teleop, fps, duration):
 
 
 def unrecorded_teleop_loop_no_ik(
-    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None, verbose=False, 
+    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None 
 ):
 
 
-    display_len = max(len(key) for key in robot.action_features)
 
-        
+    robot.configure()
     """ Calculate FK once for initial position """
     observation = robot.get_observation() # set robot.present_pos
     
     start = time.perf_counter()
-    print("Teleop loop starting...")
+    print("Unrecorded Teleop loop starting...")
     while True:
         loop_start = time.perf_counter()
         action = teleop.get_action()
@@ -182,14 +181,7 @@ def unrecorded_teleop_loop_no_ik(
         busy_wait(1 / fps - dt_s)
 
         loop_s = time.perf_counter() - loop_start
-        if verbose:
-            logging.info("\n" + "-" * (display_len + 10))
-
-            for motor, value in action.items():
-                logging.info(f"{motor:<{display_len}} | {value:>7.2f}")
-
-            logging.info(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
-            move_cursor_up(len(action) + 10)
+        
         if duration is not None and time.perf_counter() - start >= duration:
             return
 
@@ -368,26 +360,27 @@ def teleop_loop(
 
 def teleop_loop_no_ik(
     teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, task=None, verbose=False, 
-):
-    print(f"In no IK loop...")
-            
+):       
+    robot.configure()     
     start = time.perf_counter()
-    print("Teleop loop starting...")
+    print("The no-IK loop is starting...")
     while True:
         loop_start = time.perf_counter()
         
         observation = robot.get_observation()
         action = teleop.get_action()
             
+        #print(f"Sending {action}")
         robot.send_action(action) # comment for mock?
         
         if dataset is not None:
             frame = {
-                "observation.state": np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)   # robot state
+                "observation.state": np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)   # robot state
             }
             for angle, reader in reader_assignments.items():
-                frame[f"observation.state.{angle}"] = reader.frame.copy()
-            frame["action"] = np.array(action.values(), dtype=np.float32)
+                frame[f"observation.images.{angle}"] = reader.frame.copy()
+            print(f"Action frame: {list(action.values())}")
+            frame["action"] = np.array(list(action.values()), dtype=np.float32)
             dataset.add_frame(
                 frame,
                 task=task,        # or whatever

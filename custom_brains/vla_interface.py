@@ -141,6 +141,7 @@ def record(robot: SO101Follower | KinovaGen3EndEffector, teleop_config: Teleoper
     action_features = hw_to_dataset_features(robot.action_features, "action", use_video=True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", use_video=True)
     dataset_features = {**action_features, **obs_features}
+    print(dataset_features)
 
     dataset = LeRobotDataset.create(
         repo_id="olingoudey/" + dataset_name,
@@ -153,10 +154,11 @@ def record(robot: SO101Follower | KinovaGen3EndEffector, teleop_config: Teleoper
         image_writer_threads=4 * 2,
         batch_encoding_size=16,
     )
+
     teleop = make_teleoperator_from_config(teleop_config)
     print(f"TELEOP: {teleop}, IK?: {with_ik}")
     teleop.connect() # doesn't really do anything rn...
-
+    
     try:
         robot = reset_bw_episode(robot, teleop)
         task = input("Task name?:")
@@ -472,7 +474,7 @@ class RawTeleopRunner:
                 if with_ik:
                     unrecorded_teleop_loop(teleop, robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.teleop_time_s, verbose=False) # send IPwebcam to teleop loop 
                 else:
-                    unrecorded_teleop_loop_no_ik(teleop, robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.teleop_time_s, verbose=False) # send IPwebcam to teleop loop                     
+                    unrecorded_teleop_loop_no_ik(teleop, robot, 30, 400) # send IPwebcam to teleop loop                     
             except KeyboardInterrupt:
                 input("[hit Enter to catch me]\n")
                 for t in range(60, 0, -1):
