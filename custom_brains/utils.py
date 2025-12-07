@@ -2,6 +2,16 @@ from pathlib import Path
 import json
 import shutil
 
+from lerobot.robots import (
+    Robot,
+    RobotConfig,
+    make_robot_from_config,
+    so101_follower,
+    kinova_gen3,
+)
+from lerobot.robots.so101_follower import SO101FollowerConfig, SO101Follower
+from lerobot.robots.kinova_gen3 import KinovaGen3EndEffectorConfig, KinovaGen3EndEffector
+
 def merge_datasets(out_dir, *dataset_dirs):
     """
     Used to combine two identically formatted datasets, likely because a recording session was interrupted. 
@@ -103,6 +113,8 @@ def merge_datasets(out_dir, *dataset_dirs):
         print(f"    Total videos copied (up): {video_up_index}, (side): {video_side_index}")
         print(f"    Total unique tasks: {len(merged_tasks)}\n")
 
+
+
     # write merged metadata
     with open(out_dir / "meta/episodes.jsonl", "w") as f:
         for ep in merged_episodes:
@@ -143,6 +155,35 @@ def merge_datasets(out_dir, *dataset_dirs):
 
     print(f"Merging complete. Total episodes: {len(merged_episodes)}, total tasks: {len(merged_tasks)}")
 
+import time
+
+def reset_bw_episode(robot, teleop):
+    """ Robot reset function - needed? """
+    print("Resetting position")
+    if type(robot) == KinovaGen3EndEffector:
+        robot.move_to_home_position()
+        return robot
+    try:
+        robot.reset_position()
+        print("robot reset...")
+        
+        
+        if teleop:
+            calculated_ee_pos = teleop.kinematics.forward_kinematics(np.array([robot.present_pos[name] for name in teleop.joint_names]))
+            print("resetting teleop's target pose")
+            teleop.reset(calculated_ee_pos)
+
+            
+            print("actuating to target pose at start of teleop loop")
+        return robot
+    except RuntimeError as e:
+        print("Robot connection error?:", e)
+        print("Reconnecting... (Catch me!)")
+        time.sleep(1)
+        robot.disconnect()
+        robot = make_robot_from_config(teleop_config().robot)
+        robot.connect()
+        return robot
 
 def synonomize(output_dir, dataset_dir):
     """ Not very useful... """
