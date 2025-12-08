@@ -267,7 +267,7 @@ def unrecorded_teleop_loop(
             return
 
 def teleop_loop(
-    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, task=None, verbose=False, 
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, verbose=False, signal: dict[str, Any]={"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
 ):
     
     if not robot.bus.is_connected:
@@ -298,7 +298,7 @@ def teleop_loop(
             
     start = time.perf_counter()
     print("Teleop loop starting...")
-    while True:
+    while signal["EPISODE_RUNNING"]:
         loop_start = time.perf_counter()
         
         observation = robot.get_observation()
@@ -340,7 +340,7 @@ def teleop_loop(
             frame["action"] = np.array(calculated_new_joints_deg, dtype=np.float32)
             dataset.add_frame(
                 frame,
-                task=task,        # or whatever
+                task=signal["task"],
             )
         
         dt_s = time.perf_counter() - loop_start
@@ -359,7 +359,7 @@ def teleop_loop(
             return
 
 def teleop_loop_no_ik(
-    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, task=None, verbose=False, 
+    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, task=None, verbose=False, signal: dict[str, Any]={"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
 ):       
     robot.configure()     
     start = time.perf_counter()
@@ -390,32 +390,6 @@ def teleop_loop_no_ik(
         busy_wait(1 / fps - dt_s)
 
         loop_s = time.perf_counter() - loop_start
-        
-def test_record_loop(dataset):
-    webcam1_cap = cv2.VideoCapture(0)
-    
-    webcam1_reader = CameraReader(webcam1_cap)
-    webcam1_reader.start()
-    logging.info("Waiting...")
-    time.sleep(3)
-    for i in range(0, 30):
-        start=time.perf_counter()
-        webcam1_frame = webcam1_reader.frame
-        dataset.add_frame(
-            frame={
-                "observation.state": np.array([0,0,0,0,0,0], dtype=np.float32),   # robot state
-                "observation.images.side": webcam1_frame,
-                "action": np.array([1,1,1,1,1,1], dtype=np.float32),
-            },
-            task="test",        # or whatever
-            #timestamp=time.perf_counter() - start,
-        )
-        logging.info("step")
-        time.sleep(0.1)
-    webcam1_reader.stop()
-    webcam1_reader.join()
-    webcam1_cap.release()
-
 
 
 
