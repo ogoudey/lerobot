@@ -29,7 +29,6 @@ from pprint import pformat
 from typing import Protocol, TypeAlias
 
 import serial
-from deepdiff import DeepDiff
 from tqdm import tqdm
 
 from lerobot.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
@@ -266,6 +265,9 @@ class MotorsBus(abc.ABC):
         motors: dict[str, Motor],
         calibration: dict[str, MotorCalibration] | None = None,
     ):
+        from deepdiff import DeepDiff
+
+
         self.port = port
         self.motors = motors
         self.calibration = calibration if calibration else {}
