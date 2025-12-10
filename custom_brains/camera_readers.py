@@ -120,13 +120,36 @@ class USBCameraReader(Thread):
         
     def stop(self):
         self.running = False
-
+import base64
+import socket
 def main():
     import matplotlib.pyplot as plt
 
     #cap = USBCameraReader.get_cap(6)
-    cap = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
+    cap = WebcamReader.get_cap("rtsp://10.243.122.252:8080/h264_ulaw.sdp")
+    #cap = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
     print(f"Got cap: {cap}")
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # --- Convert frame to PNG bytes ---
+        ret2, buffer = cv2.imencode('.png', frame)
+        if not ret2:
+            continue
+
+        # --- Base64 encode ---
+        b64_data = base64.b64encode(buffer).decode('utf-8')
+
+        # Optionally prepend data URI prefix (optional, Unity code handles both)
+        msg = f"data:image/png;base64,{b64_data}"
+
+        # --- Send over socket ---
+        s.sendall(msg.encode('utf-8'))
+    
+    """
     ret, frame = cap.read()
     if ret:
         # Convert BGR → RGB
@@ -134,6 +157,7 @@ def main():
         plt.imshow(frame_rgb)
         plt.axis('off')
         plt.show()
+    """
 
 if __name__ == "__main__":
     main()
