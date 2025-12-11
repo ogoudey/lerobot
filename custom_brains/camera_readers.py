@@ -138,8 +138,9 @@ def main():
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     print("Connecting...")
-    #s.connect(("192.168.0.10", 5000))
-    s.connect(("127.0.0.1", 5000))
+    #s.connect(("192.168.0.10", 5000)) # desktop on Space Popcorn
+    s.connect(("192.168.0.209", 5000))
+    #s.connect(("127.0.0.1", 5000))
     print("Connected!")
 
     #cap = WebcamReader.get_cap("rtsp://192.168.0.159:8080/h264_ulaw.sdp")
