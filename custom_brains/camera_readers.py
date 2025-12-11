@@ -137,10 +137,12 @@ def main():
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     print("Connecting...")
-    s.connect(("192.168.0.10", 5000))
+    #s.connect(("192.168.0.10", 5000))
+    s.connect(("127.0.0.1", 5000))
     print("Connected!")
 
-    cap = WebcamReader.get_cap("rtsp://192.168.0.159:8080/h264_ulaw.sdp")
+    #cap = WebcamReader.get_cap("rtsp://192.168.0.159:8080/h264_ulaw.sdp")
+    cap = WebcamReader.get_cap("rtsp://10.243.122.252:8080/h264_ulaw.sdp")
     print(f"Got cap: {cap}")
 
     sent_frames = 1
@@ -156,15 +158,14 @@ def main():
             # --- Base64 encode ---
             b64_data = base64.b64encode(buffer).decode('utf-8')
 
-            # Optionally prepend data URI prefix (optional, Unity code handles both)
-            msg = f"data:image/png;base64,{b64_data}"
+            data_bytes = b64_data.encode('utf-8')
+            length = len(data_bytes)
+            s.sendall(length.to_bytes(4, 'big') + data_bytes)
 
-            # --- Send over socket ---
-            s.sendall((msg + "\n").encode('utf-8'))
             sent_frames += 1
         else:
             print(f"No ret")
-
+    
 
     #cap = USBCameraReader.get_cap(6)
 def just_show():
