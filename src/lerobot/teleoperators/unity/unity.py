@@ -12,6 +12,12 @@ from .configuration_unity import UnityEndEffectorTeleopConfig
 
 from ...model.kinematics import RobotKinematics    
 
+import cv2
+import socket as s
+import time
+import base64
+
+    
 
 UNITY_AVAILABLE = True
 try: 
@@ -136,6 +142,9 @@ class UnityEndEffectorTeleop(Teleoperator):
         self.current_pressed = {}
         self.listener = None
         self.logs = {}
+
+        if hasattr(config, "unity_projector"):
+            self.unity_projector = config.unity_projector
         
         self.urdf_path = os.path.abspath("custom_brains/so101_new_calib.urdf")
         #self.urdf_path = os.path.abspath("custom_brains/so101_old_calib.urdf")
@@ -178,15 +187,31 @@ class UnityEndEffectorTeleop(Teleoperator):
             assert self.kinematics.joint_names == self.joint_names
         
         #self.t = threading.Thread(target=pose_listener, args=[self.target_pos])
-        self.t = threading.Thread(target=termux_listener, args=[self.target_pos])
+        self.transform = threading.Thread(target=pose_listener, args=[self.target_pos])
         
+        self.socket = s.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        
+
+    def project(self, raw_frame):
+        # --- Convert frame to PNG bytes ---
+        ret2, buffer = cv2.imencode('.png', raw_frame)
+        if not ret2:
+            return
+
+        # --- Base64 encode ---
+        b64_data = base64.b64encode(buffer).decode('utf-8')
+
+        data_bytes = b64_data.encode('utf-8')
+        length = len(data_bytes)
+        self.socket.sendall(length.to_bytes(4, 'big') + data_bytes)
 
     def calibrate(self) -> None:
         pass
 
     @property
     def is_calibrated(self) -> bool:
-        pass
+        return True
 
     @property
     def feedback_features(self) -> dict:
@@ -203,13 +228,15 @@ class UnityEndEffectorTeleop(Teleoperator):
             "names": {},
         }
 
-    def connect(self) -> None:
+    def connect(self, calibrate=False) -> None:
         # Open socket to Unity
         print("Doing something connect-y here...")
-        self.t.start()
+        self.transform.start()
         self.connected = True
         while self.target_pos["x"] == 0.0: # until the x target moves from its initial pose (the teleop data is doing something...)
             print(f"Waiting for teleop data...", end="\r")
+
+        self.socket.connect(("127.0.0.1", 5000))
 
         if UNITY_AVAILABLE:
             logging.info("Unity is available!")

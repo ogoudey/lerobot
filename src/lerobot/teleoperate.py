@@ -379,6 +379,8 @@ def teleop_loop_no_ik(
             }
             for angle, reader in reader_assignments.items():
                 frame[f"observation.images.{angle}"] = reader.frame.copy()
+                if type(teleop).__name__ == "UnityEndEffectorTeleop":
+                    teleop.project(reader.frame.copy())
             print(f"Action frame: {list(action.values())}")
             frame["action"] = np.array(list(action.values()), dtype=np.float32)
             dataset.add_frame(

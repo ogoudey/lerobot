@@ -101,6 +101,7 @@ class USBCameraReader(Thread):
             exit()
 
         self.frame = None
+        self.raw_frame = None
         self.running = True
         
         self.frame_updates = 0
@@ -109,10 +110,10 @@ class USBCameraReader(Thread):
         while self.running:
 
             with suppress_libjpeg_warnings():
-                ret, frame = self.cap.read()
+                ret, self.raw_frame = self.cap.read()
 
             if ret:
-                self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).copy()
+                self.frame = cv2.cvtColor(self.raw_frame, cv2.COLOR_BGR2RGB).copy()
                 self.frame_updates += 1
             else:
                 print("\rNo retrieved frame yet...")
