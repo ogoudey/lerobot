@@ -177,8 +177,8 @@ def get_dataset_features(robot, cameras):
     dataset_features = {**action_features, **obs_features}   
     return dataset_features   
 
-def record(robot: SO101Follower | KinovaGen3EndEffector, teleop_config: TeleoperateConfig, dataset_name, reader_assignments: dict[str, WebcamReader | USBCameraReader], with_ik=False, signal:dict={"RUNNING_LOOP":True, "RUNNING_E": True, "task":"default_task_name"}):
-    cameras = list(reader_assignments.values())
+def start_cameras(cameras):
+    
     for camera in cameras:
         if camera.is_alive():
             continue
@@ -186,6 +186,10 @@ def record(robot: SO101Follower | KinovaGen3EndEffector, teleop_config: Teleoper
         while camera.frame is None:
             print(f"\rWaiting... on {camera}")
             time.sleep(0.01)
+
+def record(robot: SO101Follower | KinovaGen3EndEffector, teleop_config: TeleoperateConfig, dataset_name, reader_assignments: dict[str, WebcamReader | USBCameraReader], with_ik=False, signal:dict={"RUNNING_LOOP":True, "RUNNING_E": True, "task":"default_task_name"}):
+    cameras = list(reader_assignments.values())
+    start_cameras(cameras)
 
     dataset_features = get_dataset_features(robot, cameras)
 
@@ -373,16 +377,21 @@ class RawTeleopRunner:
 
 class MockRawRunner:
     """No robot, no recording. Accepts UnityEndEffectorTeleopConfig."""
-    def __init__(self, teleop_config):
+    def __init__(self, teleop_config, reader_assignments):
         self.teleop_config = teleop_config
+        self.reader_assignments = reader_assignments
+
+        
     # import osmething other than teleop_loop
     def run(self):
         teleop = make_teleoperator_from_config(self.teleop_config)
         teleop.connect()
+        cameras = list(self.reader_assignments.values())
+        start_cameras(cameras)
         input("Ready to enter loop?")
 
         while True:
-            no_robot_loop(teleop, self.teleop_config.fps, self.teleop_config.teleop_time_s,) # send IPwebcam to teleop loop 
+            no_robot_loop(teleop, self.teleop_config.fps, self.teleop_config.teleop_time_s, self.reader_assignments) # send IPwebcam to teleop loop 
 
 class SmolVLARunner:
     """Runs smolvla."""
@@ -445,9 +454,16 @@ def create_raw_teleop():
     unity_teleop: TeleoperateConfig = create_teleop(None, UnityEndEffectorTeleopConfig)
     return RawTeleopRunner(unity_teleop)
 
-def create_raw_teleop_mock():
+def create_raw_teleop_mock(use_laptop_camera=False):
     unity_teleop: TeleoperateConfig = create_teleop(None, UnityEndEffectorTeleopConfig)
-    return MockRawRunner(unity_teleop)
+    if use_laptop_camera:
+        from camera_readers import WebcamReader, USBCameraReader
+        reader_assignments = {
+            "laptop": USBCameraReader(USBCameraReader.get_cap(0)),
+        }
+    else:
+        reader_assignments = {}
+    return MockRawRunner(unity_teleop, reader_assignments)
 
 def create_teleop_unrecorded_interaction():
     robot, robot_config = create_body()

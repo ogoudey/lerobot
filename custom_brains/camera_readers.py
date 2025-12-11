@@ -139,12 +139,13 @@ def main():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     print("Connecting...")
     #s.connect(("192.168.0.10", 5000)) # desktop on Space Popcorn
-    s.connect(("192.168.0.209", 5000))
+    s.connect(("192.168.0.209", 5000)) # VR computer on Ethernet
     #s.connect(("127.0.0.1", 5000))
     print("Connected!")
 
-    #cap = WebcamReader.get_cap("rtsp://192.168.0.159:8080/h264_ulaw.sdp")
-    cap = WebcamReader.get_cap("rtsp://10.243.122.252:8080/h264_ulaw.sdp")
+    #cap = WebcamReader.get_cap("rtsp://192.168.0.159:8080/h264_ulaw.sdp") # phone at home
+    #cap = WebcamReader.get_cap("rtsp://10.243.122.252:8080/h264_ulaw.sdp") # phone on Tufts Secure
+    cap = USBCameraReader.get_cap(0)
     print(f"Got cap: {cap}")
 
     sent_frames = 1
@@ -171,41 +172,27 @@ def main():
 
     #cap = USBCameraReader.get_cap(6)
 def just_show():
-    cap = WebcamReader.get_cap("rtsp://10.243.122.252:8080/h264_ulaw.sdp")
+    cap = USBCameraReader.get_cap(0)
+    #cap = WebcamReader.get_cap("rtsp://10.243.122.252:8080/h264_ulaw.sdp")
     #cap = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
     print(f"Got cap: {cap}")
-    
-    while True:
+    time.sleep(1)
+    ret = None    
+    while not ret:
         ret, frame = cap.read()
-        if not ret:
-            break
-
-        # --- Convert frame to PNG bytes ---
-        ret2, buffer = cv2.imencode('.png', frame)
-        if not ret2:
-            continue
-
-        # --- Base64 encode ---
-        b64_data = base64.b64encode(buffer).decode('utf-8')
-
-        # Optionally prepend data URI prefix (optional, Unity code handles both)
-        msg = f"data:image/png;base64,{b64_data}"
-
-        # --- Send over socket ---
-        s.sendall(msg.encode('utf-8'))
-    
-    """
-    ret, frame = cap.read()
-    if ret:
         # Convert BGR → RGB
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         plt.imshow(frame_rgb)
         plt.axis('off')
         plt.show()
-    else:
-        print(f"No ret")
+        
+
+    
+    """
+    
     
     """
 
 if __name__ == "__main__":
+    just_show()
     main()

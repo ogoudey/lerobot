@@ -16,12 +16,12 @@ import cv2
 import socket as s
 import time
 import base64
-
+import random
     
 
 UNITY_AVAILABLE = True
 try: 
-    HOST = "127.0.0.1"
+    HOST = "0.0.0.0"
     PORT = 5001
 
     import socket
@@ -114,7 +114,7 @@ def pose_listener(shared):
                 if not data:
                     break
                 transform = json.loads(data.decode().strip())
-                print(f"Updating local data: {transform}")
+                #print(f"Updating local data: {transform}")
                 try:
                     shared["x"] = transform["px"]
                     shared["y"] = transform["py"]
@@ -195,16 +195,21 @@ class UnityEndEffectorTeleop(Teleoperator):
 
     def project(self, raw_frame):
         # --- Convert frame to PNG bytes ---
-        ret2, buffer = cv2.imencode('.png', raw_frame)
-        if not ret2:
-            return
+        try:
+            ret2, buffer = cv2.imencode('.png', raw_frame)
+            if not ret2:
+                return
 
-        # --- Base64 encode ---
-        b64_data = base64.b64encode(buffer).decode('utf-8')
+            # --- Base64 encode ---
+            b64_data = base64.b64encode(buffer).decode('utf-8')
 
-        data_bytes = b64_data.encode('utf-8')
-        length = len(data_bytes)
-        self.socket.sendall(length.to_bytes(4, 'big') + data_bytes)
+            data_bytes = b64_data.encode('utf-8')
+            length = len(data_bytes)
+            self.socket.sendall(length.to_bytes(4, 'big') + data_bytes)
+            return True
+        except Exception as e:
+            print(f"{e}\n Failed to send frame to Unity.")
+            return False
 
     def calibrate(self) -> None:
         pass
@@ -230,14 +235,16 @@ class UnityEndEffectorTeleop(Teleoperator):
 
     def connect(self, calibrate=False) -> None:
         # Open socket to Unity
-        print("Doing something connect-y here...")
+        print("Connecting...")
         self.transform.start()
         self.connected = True
         while not "x" in self.target_pos: # until the x target moves from its initial pose (the teleop data is doing something...)
             print(f"Waiting for teleop data...", end="\r")
-
-        self.socket.connect(("127.0.0.1", 5000))
-
+        try:
+            self.socket.connect(("192.168.0.209", 5000)) # VR computer 
+            print(f"Successfully connected to Unity VR")
+        except Exception as e:
+            print(f"Streaming Connection Error: {e}")
         if UNITY_AVAILABLE:
             logging.info("Unity is available!")
 
@@ -246,6 +253,8 @@ class UnityEndEffectorTeleop(Teleoperator):
         return self.connected
 
     def get_action(self) -> dict[str, Any]:
+        if random.random() < 0.01:
+            print(self.target_pos)
 
         if not self.is_connected:
             raise DeviceNotConnectedError(

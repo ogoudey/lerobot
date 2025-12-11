@@ -144,13 +144,22 @@ def mock_teleop_loop(teleop):
         dt_s = time.perf_counter() - loop_start
         busy_wait(1 / 30 - dt_s)
 
-def no_robot_loop(teleop, fps, duration):        
+def no_robot_loop(teleop, fps, duration, reader_assignments={}):        
     start = time.perf_counter()
     print("No robot teleop loop starting...")
     while True:
         loop_start = time.perf_counter()
-        action = teleop.get_action()
-            
+        action = teleop.get_action() # prints 1/10 of the time
+        
+        for angle, reader in reader_assignments.items():
+            if type(teleop).__name__ == "UnityEndEffectorTeleop":
+                print(f"Sending projection to Teleop")
+                if not reader.frame is None:
+                    teleop.project(reader.frame.copy())
+                else:
+                    print(f"Reader has no frame")
+            else:
+                print(f"Not sending projection")
         #print(f"Action: {action}", end="\r")
         
         dt_s = time.perf_counter() - loop_start
@@ -380,7 +389,10 @@ def teleop_loop_no_ik(
             for angle, reader in reader_assignments.items():
                 frame[f"observation.images.{angle}"] = reader.frame.copy()
                 if type(teleop).__name__ == "UnityEndEffectorTeleop":
+                    print(f"Sending projection to Teleop")
                     teleop.project(reader.frame.copy())
+                else:
+                    print(f"Not sending projection")
             print(f"Action frame: {list(action.values())}")
             frame["action"] = np.array(list(action.values()), dtype=np.float32)
             dataset.add_frame(
