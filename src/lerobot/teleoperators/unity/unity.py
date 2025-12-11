@@ -102,7 +102,7 @@ def pose_listener(shared):
         s.bind((HOST, PORT))
         s.listen()
 
-        print("Python server listening...")
+        print("Pose server listening for pose...")
 
         conn, addr = s.accept()
         print("Connected:", addr)
@@ -233,7 +233,7 @@ class UnityEndEffectorTeleop(Teleoperator):
         print("Doing something connect-y here...")
         self.transform.start()
         self.connected = True
-        while self.target_pos["x"] == 0.0: # until the x target moves from its initial pose (the teleop data is doing something...)
+        while not "x" in self.target_pos: # until the x target moves from its initial pose (the teleop data is doing something...)
             print(f"Waiting for teleop data...", end="\r")
 
         self.socket.connect(("127.0.0.1", 5000))

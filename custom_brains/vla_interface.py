@@ -453,8 +453,8 @@ def create_teleop_unrecorded_interaction():
     robot, robot_config = create_body()
     robot.configure()
     human_policy = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
-    r = RawTeleopRunner(human_policy)
-    r.run(robot)
+    return RawTeleopRunner(human_policy)
+    
 
 def create_unrecorded_mock_interaction(dataset_name="mock"):
     human_policy = create_raw_teleop_mock()
