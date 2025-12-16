@@ -18,6 +18,9 @@ import time
 import base64
 import random
     
+import math
+import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 UNITY_AVAILABLE = True
 try: 
@@ -96,8 +99,9 @@ def termux_listener(shared):
         except KeyError:
             print(f"{msg} is not the expected transform format...")
 
-# Unity pose listener
+# Unity pose listener. Now with gripper too.
 def pose_listener(shared):
+    heard_poses = 0
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen()
@@ -107,25 +111,49 @@ def pose_listener(shared):
         conn, addr = s.accept()
         print("Connected:", addr)
         # 'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
-
+        last_pose = {}
         with conn:
             while True:
                 data = conn.recv(1024)
                 if not data:
                     break
-                transform = json.loads(data.decode().strip())
-                #print(f"Updating local data: {transform}")
                 try:
-                    shared["x"] = transform["px"]
-                    shared["y"] = transform["py"]
-                    shared["z"] = transform["pz"]
-                    shared["rx"] = transform["rx"]
-                    shared["ry"] = transform["ry"]
-                    shared["rz"] = transform["rz"]
-                    shared["rw"] = transform["rw"]
-                    shared["gripper"] = 0.0
-                except KeyError:
-                    print(f"{transform} is not the expected transform format...")
+                    transform_gripper = json.loads(data.decode().strip())
+                except Exception as e:
+                    print(f"BAd data: {e}. (Continuing)")
+                    continue
+                #print(f"Updating local data: {transform}")
+                #print(f"{heard_poses} poses heard; input: {transform_gripper}")
+
+            
+                try:
+                    if "px" in last_pose:
+                        shared["delta_x"] = transform_gripper["px"] - last_pose["px"]
+                        shared["delta_y"] = transform_gripper["py"] - last_pose["py"]
+                        shared["delta_z"] = transform_gripper["pz"] - last_pose["pz"]
+
+                        q_curr = [transform_gripper["rx"], transform_gripper["ry"], transform_gripper["rz"], transform_gripper["rw"]]
+                        q_last = [last_pose["rx"], last_pose["ry"], last_pose["rz"], last_pose["rw"]]
+                        r_delta = R.from_quat(q_curr) * R.from_quat(q_last).inv()
+
+                        roll, pitch, yaw = r_delta.as_euler("xyz", degrees=False)
+                        shared["theta_x"], shared["theta_y"], shared["theta_z"] = float(roll), float(pitch), float(yaw)
+                        shared["gripper"] = transform_gripper["gripper"]
+
+                        #print(f"Shared delta updated to {shared}")
+                    last_pose["px"] = transform_gripper["px"]
+                    last_pose["py"] = transform_gripper["py"]
+                    last_pose["pz"] = transform_gripper["pz"]
+                    
+                    last_pose["rx"] = transform_gripper["rx"]
+                    last_pose["ry"] = transform_gripper["ry"]
+                    last_pose["rz"] = transform_gripper["rz"]
+                    last_pose["rw"] = transform_gripper["rw"]
+                except KeyError as e:
+                    print(f"{transform_gripper} is not the expected transform format... ({e})")
+                except Exception as e:
+                    print(f"Error: {e}")
+                heard_poses += 1          
 
 class UnityEndEffectorTeleop(Teleoperator):
     config_class = UnityEndEffectorTeleopConfig
@@ -166,7 +194,7 @@ class UnityEndEffectorTeleop(Teleoperator):
             "wrist_roll",
             "gripper",
         ]
-        self.target_pos = {'gripper': 0.0, 'delta_x': 0.0, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
+        self.target_pos = {}
         """ # For SO101
         self.target_pos = {
             "x": 0.2,
@@ -189,9 +217,7 @@ class UnityEndEffectorTeleop(Teleoperator):
         #self.t = threading.Thread(target=pose_listener, args=[self.target_pos])
         self.transform = threading.Thread(target=pose_listener, args=[self.target_pos])
         
-        self.socket = s.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
-        
+        self.socket = s.socket(socket.AF_INET, socket.SOCK_STREAM)        
 
     def project(self, raw_frame):
         # --- Convert frame to PNG bytes ---
@@ -238,8 +264,12 @@ class UnityEndEffectorTeleop(Teleoperator):
         print("Connecting...")
         self.transform.start()
         self.connected = True
-        while not "x" in self.target_pos: # until the x target moves from its initial pose (the teleop data is doing something...)
-            print(f"Waiting for teleop data...", end="\r")
+        print(f"Waiting for teleop data... (delta_x not in {self.target_pos})", end="\n")
+        while not "delta_x" in self.target_pos: # until the x target moves from its initial pose (the teleop data is doing something...)
+            if random.random() < 0.1:
+                print(f"Waiting for teleop data... (delta_x not in {self.target_pos})", end="\n")
+            time.sleep(0.1)
+        print(f"Connected to teleop data")
         try:
             self.socket.connect(("192.168.0.209", 5000)) # VR computer 
             print(f"Successfully connected to Unity VR")
@@ -253,8 +283,9 @@ class UnityEndEffectorTeleop(Teleoperator):
         return self.connected
 
     def get_action(self) -> dict[str, Any]:
+        
         if random.random() < 0.01:
-            print(self.target_pos)
+            print(f"Target pos: {self.target_pos}")
 
         if not self.is_connected:
             raise DeviceNotConnectedError(

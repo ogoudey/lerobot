@@ -153,7 +153,7 @@ def no_robot_loop(teleop, fps, duration, reader_assignments={}):
         
         for angle, reader in reader_assignments.items():
             if type(teleop).__name__ == "UnityEndEffectorTeleop":
-                print(f"Sending projection to Teleop")
+                #print(f"Sending projection to Teleop")
                 if not reader.frame is None:
                     teleop.project(reader.frame.copy())
                 else:
@@ -167,12 +167,12 @@ def no_robot_loop(teleop, fps, duration, reader_assignments={}):
 
 
 def unrecorded_teleop_loop_no_ik(
-    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None 
+    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None , reader_assignments={}
 ):
 
 
 
-    robot.configure()
+    #robot.configure()
     """ Calculate FK once for initial position """
     observation = robot.get_observation() # set robot.present_pos
     
@@ -185,6 +185,16 @@ def unrecorded_teleop_loop_no_ik(
             
         robot.send_action(action) # comment for mock?
 
+        for angle, reader in reader_assignments.items():
+            if type(teleop).__name__ == "UnityEndEffectorTeleop" and angle == "onboard":
+                #print(f"Sending projection to Teleop")
+                if not reader.frame is None:
+                    teleop.project(reader.frame.copy())
+                else:
+                    print(f"Reader has no frame")
+            else:
+                #print(f"Not sending projection")
+                pass
         
         dt_s = time.perf_counter() - loop_start
         busy_wait(1 / fps - dt_s)
@@ -230,7 +240,7 @@ def unrecorded_teleop_loop(
         loop_start = time.perf_counter()
         joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])
         action = teleop.get_action()
-        print(f"{action}")
+        #print(f"{action}")
         if display_data:
             log_rerun_data(observation, action)
         
@@ -388,11 +398,12 @@ def teleop_loop_no_ik(
             }
             for angle, reader in reader_assignments.items():
                 frame[f"observation.images.{angle}"] = reader.frame.copy()
-                if type(teleop).__name__ == "UnityEndEffectorTeleop":
-                    print(f"Sending projection to Teleop")
+                if type(teleop).__name__ == "UnityEndEffectorTeleop" and angle == "onboard":
+                    #print(f"Sending projection to Teleop")
                     teleop.project(reader.frame.copy())
                 else:
-                    print(f"Not sending projection")
+                    #print(f"Not sending projection")
+                    pass
             print(f"Action frame: {list(action.values())}")
             frame["action"] = np.array(list(action.values()), dtype=np.float32)
             dataset.add_frame(

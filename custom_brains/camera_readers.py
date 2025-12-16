@@ -172,9 +172,9 @@ def main():
 
     #cap = USBCameraReader.get_cap(6)
 def just_show():
-    cap = USBCameraReader.get_cap(0)
+    #cap = USBCameraReader.get_cap(6)
     #cap = WebcamReader.get_cap("rtsp://10.243.122.252:8080/h264_ulaw.sdp")
-    #cap = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
+    cap = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
     print(f"Got cap: {cap}")
     time.sleep(1)
     ret = None    
@@ -185,13 +185,6 @@ def just_show():
         plt.imshow(frame_rgb)
         plt.axis('off')
         plt.show()
-        
-
-    
-    """
-    
-    
-    """
 
 if __name__ == "__main__":
     just_show()

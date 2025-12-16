@@ -8,6 +8,7 @@ class UnityEndEffectorTeleopConfig(TeleoperatorConfig):
     fps = 30
     teleop_time_s = 180
     mock: bool = False
+    unity_projector = None # ??
 
     @property
     def type(self) -> str:

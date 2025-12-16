@@ -5,7 +5,7 @@ import sys
 import os
 import threading
 from functools import cached_property
-
+import random
 import numpy as np
 
 from lerobot.cameras import make_cameras_from_configs
@@ -13,6 +13,7 @@ from lerobot.errors import DeviceNotConnectedError
 from lerobot.model.kinematics import RobotKinematics
 from lerobot.motors import Motor, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
+from lerobot.utils.robot_utils import busy_wait
 
 from .config_kinova_gen3_end_effector import KinovaGen3EndEffectorConfig
 
@@ -52,30 +53,54 @@ class KinovaGen3EndEffector(Robot):
             self.base_cyclic = BaseCyclicClient(router)
             
             # Example core
+            
+            """
+            # added for gripper low-level
+            self.base_command = BaseCyclic_pb2.Command()
+            self.base_command.frame_id = 0
+            self.base_command.interconnect.command_id.identifier = 0
+            self.base_command.interconnect.gripper_command.command_id.identifier = 0
+
+            self.motorcmd = self.base_command.interconnect.gripper_command.motor_cmd.add()
+
+            # Set gripper's initial position velocity and force
+            base_feedback = self.base_cyclic.RefreshFeedback()
+            self.motorcmd.position = base_feedback.interconnect.gripper_feedback.motor[0].position
+            self.motorcmd.velocity = 0
+            self.motorcmd.force = 100
+
+            for actuator in base_feedback.actuators:
+                self.actuator_command = self.base_command.actuators.add()
+                self.actuator_command.position = actuator.position
+                self.actuator_command.velocity = 0.0
+                self.actuator_command.torque_joint = 0.0
+                self.actuator_command.command_id = 0
+                print("Position = ", actuator.position)
+
+            # Save servoing mode before changing it
+            self.previous_servoing_mode = self.base.GetServoingMode()
+
+            # Set base in low level servoing mode
+            servoing_mode_info = Base_pb2.ServoingModeInformation()
+            servoing_mode_info.servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
+            self.base.SetServoingMode(servoing_mode_info)
+            # added for gripper low-level
+            """
             success = True
             print(f"Moving to home position")
             success &= self.move_to_home_position()
-            
+
             try:
                 while True:
+                    loop_start = time.perf_counter()
                     success &= self.send_cartesian()
+                    dt_s = time.perf_counter() - loop_start
+                    busy_wait(1 / 30 - dt_s)
             except KeyboardInterrupt:
                 print(f"Exiting action thread")
                 self.running = False
 
     def connect(self, calibrate=False):
-        # STart action thread
-        
-        """
-        try:
-            while True:
-                if not self.running:
-                    self.t.join()
-        except KeyboardInterrupt:
-            print(f"Exiting joiner thread")
-            self.connected = False
-            self.running = False
-        """
         pass
     
     @property
@@ -150,7 +175,13 @@ class KinovaGen3EndEffector(Robot):
     def is_connected(self) -> bool:
         return self.connected
 
+
+
     def send_cartesian(self):
+        toprint = random.random()
+        if toprint < 0.005:
+            print(f"({toprint}) Goal position {self.goal_position}")
+        return True
         #print("Starting Cartesian action movement ...")
         action = Base_pb2.Action()
         action.name = "Example Cartesian action movement"
@@ -187,10 +218,14 @@ class KinovaGen3EndEffector(Robot):
         else:
             #print("Timeout on action notification wait")
             pass
+
+        # one last thing:
+        #self.send_gripper_command(self.goal_position["gripper"])
         return finished
 
     def send_action(self, action):
         self.goal_position = action
+        return self.goal_position
 
     def check_for_end_or_abort(self, e):
         """Return a closure checking for END or ABORT notifications
@@ -200,12 +235,46 @@ class KinovaGen3EndEffector(Robot):
             (will be set when an END or ABORT occurs)
         """
         def check(notification, e = e):
-            print("EVENT : " + \
-                Base_pb2.ActionEvent.Name(notification.action_event))
+            #print("EVENT : " + \Base_pb2.ActionEvent.Name(notification.action_event))
             if notification.action_event == Base_pb2.ACTION_END \
             or notification.action_event == Base_pb2.ACTION_ABORT:
                 e.set()
         return check
+
+    def send_gripper_command(self, value: float):
+        """
+            value: float from 0 to 1 corresponding to the trigger value on the VR controller
+        """
+        target_position = value * 100
+        self.base_command = BaseCyclic_pb2.Command()
+        self.base_command.frame_id = 0
+        self.base_command.interconnect.command_id.identifier = 0
+        self.base_command.interconnect.gripper_command.command_id.identifier = 0
+
+        while True:
+            try:
+                base_feedback = self.base_cyclic.Refresh(self.base_command)
+
+                # Calculate speed according to position error (target position VS current position)
+                position_error = target_position - base_feedback.interconnect.gripper_feedback.motor[0].position
+
+                # If positional error is small, stop gripper
+                if abs(position_error) < 1.5:
+                    position_error = 0
+                    self.motorcmd.velocity = 0
+                    self.base_cyclic.Refresh(self.base_command)
+                    return True
+                else:
+                    self.motorcmd.velocity = 2.0 * abs(position_error) # "proportional gain" is hard-coded
+                    if self.motorcmd.velocity > 100.0:
+                        self.motorcmd.velocity = 100.0
+                    self.motorcmd.position = target_position
+
+            except Exception as e:
+                print("Error in refresh: " + str(e))
+                return False
+            time.sleep(0.001)
+        return True
 
     def move_to_home_position(self):
         # Make sure the arm is in Single Level Servoing mode
