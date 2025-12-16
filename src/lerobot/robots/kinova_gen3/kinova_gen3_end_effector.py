@@ -26,7 +26,7 @@ from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
 
 from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2, Common_pb2
 
-TIMEOUT_DURATION=20.0
+TIMEOUT_DURATION=1.0
 
 class KinovaGen3EndEffector(Robot):
     """
@@ -39,67 +39,85 @@ class KinovaGen3EndEffector(Robot):
     def __init__(self, config: KinovaGen3EndEffectorConfig):
         super().__init__(config)
         self.goal_position = {"delta_x": 0.0, "delta_y": 0.0, "delta_z": 0.0, "theta_x": 0.0, "theta_y": 0.0, "theta_z": 0.0, "gripper": 0.0}
+        self.goal_lock = threading.Lock()
+        self.t = threading.Thread(target=self.ee_writer)
         self.config = config
+        print("main thread self id:", id(self))
+        print("main thread goal_position id:", id(self.goal_position))
+
     def ee_writer(self):
+        print("ee_writer self id:", id(self))
+        print("ee_writer goal_position id:", id(self.goal_position))
         print(f"Importing utilities")
         from . import utilities
         print(f"{utilities.__file__}")
         args = utilities.parseConnectionArguments()
         print(f"{args}")
-        with utilities.DeviceConnection.createTcpConnection(args) as router:
+        try:
+            with utilities.DeviceConnection.createTcpConnection(args) as router:
 
-        # Create required services
-            self.base = BaseClient(router)
-            self.base_cyclic = BaseCyclicClient(router)
-            
-            # Example core
-            
-            """
-            # added for gripper low-level
-            self.base_command = BaseCyclic_pb2.Command()
-            self.base_command.frame_id = 0
-            self.base_command.interconnect.command_id.identifier = 0
-            self.base_command.interconnect.gripper_command.command_id.identifier = 0
+            # Create required services
+                self.base = BaseClient(router)
+                self.base_cyclic = BaseCyclicClient(router)
+                
+                # Example core
+                
+                """
+                # added for gripper low-level
+                self.base_command = BaseCyclic_pb2.Command()
+                self.base_command.frame_id = 0
+                self.base_command.interconnect.command_id.identifier = 0
+                self.base_command.interconnect.gripper_command.command_id.identifier = 0
 
-            self.motorcmd = self.base_command.interconnect.gripper_command.motor_cmd.add()
+                self.motorcmd = self.base_command.interconnect.gripper_command.motor_cmd.add()
 
-            # Set gripper's initial position velocity and force
-            base_feedback = self.base_cyclic.RefreshFeedback()
-            self.motorcmd.position = base_feedback.interconnect.gripper_feedback.motor[0].position
-            self.motorcmd.velocity = 0
-            self.motorcmd.force = 100
+                # Set gripper's initial position velocity and force
+                base_feedback = self.base_cyclic.RefreshFeedback()
+                self.motorcmd.position = base_feedback.interconnect.gripper_feedback.motor[0].position
+                self.motorcmd.velocity = 0
+                self.motorcmd.force = 100
 
-            for actuator in base_feedback.actuators:
-                self.actuator_command = self.base_command.actuators.add()
-                self.actuator_command.position = actuator.position
-                self.actuator_command.velocity = 0.0
-                self.actuator_command.torque_joint = 0.0
-                self.actuator_command.command_id = 0
-                print("Position = ", actuator.position)
+                for actuator in base_feedback.actuators:
+                    self.actuator_command = self.base_command.actuators.add()
+                    self.actuator_command.position = actuator.position
+                    self.actuator_command.velocity = 0.0
+                    self.actuator_command.torque_joint = 0.0
+                    self.actuator_command.command_id = 0
+                    print("Position = ", actuator.position)
 
-            # Save servoing mode before changing it
-            self.previous_servoing_mode = self.base.GetServoingMode()
+                # Save servoing mode before changing it
+                self.previous_servoing_mode = self.base.GetServoingMode()
 
-            # Set base in low level servoing mode
-            servoing_mode_info = Base_pb2.ServoingModeInformation()
-            servoing_mode_info.servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
-            self.base.SetServoingMode(servoing_mode_info)
-            # added for gripper low-level
-            """
-            success = True
-            print(f"Moving to home position")
-            success &= self.move_to_home_position()
+                # Set base in low level servoing mode
+                servoing_mode_info = Base_pb2.ServoingModeInformation()
+                servoing_mode_info.servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
+                self.base.SetServoingMode(servoing_mode_info)
+                # added for gripper low-level
+                """
+                success = True
+                print(f"Moving to home position")
+                success &= self.move_to_home_position()
 
-            try:
-                while True:
-                    loop_start = time.perf_counter()
-                    success &= self.send_cartesian()
-                    dt_s = time.perf_counter() - loop_start
-                    busy_wait(1 / 30 - dt_s)
-            except KeyboardInterrupt:
-                print(f"Exiting action thread")
-                self.running = False
-
+                try:
+                    print("ee_writer goal_position id:", id(self.goal_position))
+                    print(f"Starting action writer loop")
+                    while True:
+                        loop_start = time.perf_counter()
+                        #with self.goal_lock:
+                        
+                        if self.goal_position["theta_y"] > 0.01:
+                            print(f"[ee_writer] goal position {self.goal_position}")
+                        success &= self.send_cartesian(self.goal_position)
+                        dt_s = time.perf_counter() - loop_start
+                        busy_wait(1 / 30 - dt_s)
+                except KeyboardInterrupt:
+                    print(f"Exiting action thread")
+                    self.running = False
+                    raise KeyboardInterrupt("Exited")
+        except KeyboardInterrupt:
+            return
+        except Exception as e:
+            print(f"Error {e}. could not initialize.")
     def connect(self, calibrate=False):
         pass
     
@@ -116,7 +134,7 @@ class KinovaGen3EndEffector(Robot):
         pass
 
     def configure(self):
-        self.t = threading.Thread(target=self.ee_writer)
+        
         self.t.start()
         self.running = True
         pass
@@ -177,54 +195,68 @@ class KinovaGen3EndEffector(Robot):
 
 
 
-    def send_cartesian(self):
-        toprint = random.random()
-        if toprint < 0.005:
-            print(f"({toprint}) Goal position {self.goal_position}")
-        return True
-        #print("Starting Cartesian action movement ...")
-        action = Base_pb2.Action()
-        action.name = "Example Cartesian action movement"
-        action.application_data = ""
+    def send_cartesian(self, goal_position):
+        try:
 
-        feedback = self.base_cyclic.RefreshFeedback()
-        #print(f"Goal: {self.goal_position}")
-        #print(f"Current position: {feedback.base.tool_pose_x} {feedback.base.tool_pose_y} {feedback.base.tool_pose_z}")
-        #input("[enter]")
-        cartesian_pose = action.reach_pose.target_pose
-        cartesian_pose.x = feedback.base.tool_pose_x + self.goal_position["delta_x"]          # (meters)
-        cartesian_pose.y = feedback.base.tool_pose_y + self.goal_position["delta_y"]  
-        cartesian_pose.z = feedback.base.tool_pose_z + self.goal_position["delta_z"]  
-        cartesian_pose.theta_x = feedback.base.tool_pose_theta_x + self.goal_position["theta_x"]  
-        cartesian_pose.theta_y = feedback.base.tool_pose_theta_y + self.goal_position["theta_y"]  
-        cartesian_pose.theta_z = feedback.base.tool_pose_theta_z + self.goal_position["theta_z"]  
+            goal = goal_position.copy()
+            if goal["theta_y"] > 0.01:
+                print(f"[send_cartesian] goal position {goal}")
+            
+            #print("Starting Cartesian action movement ...")
+            action = Base_pb2.Action()
+            action.name = "Cartesian + gripper"
+            action.application_data = ""
 
-        e = threading.Event()
-        notification_handle = self.base.OnNotificationActionTopic(
-            self.check_for_end_or_abort(e),
-            Base_pb2.NotificationOptions()
-        )
+            feedback = self.base_cyclic.RefreshFeedback()
+            
+            scale = .1 # for safety
 
-        #print("Executing action")
-        self.base.ExecuteAction(action)
+            cartesian_pose = action.reach_pose.target_pose
+            cartesian_pose.x = feedback.base.tool_pose_x + goal["delta_x"]*scale          # (meters)
+            cartesian_pose.y = feedback.base.tool_pose_y + goal["delta_y"]*scale
+            cartesian_pose.z = feedback.base.tool_pose_z + goal["delta_z"]  *scale
+            cartesian_pose.theta_x = feedback.base.tool_pose_theta_x + goal["theta_x"] * 10
+            cartesian_pose.theta_y = feedback.base.tool_pose_theta_y + goal["theta_y"] * 10
+            cartesian_pose.theta_z = feedback.base.tool_pose_theta_z + goal["theta_z"] * 10
 
-        #print("Waiting for movement to finish ...")
-        finished = e.wait(TIMEOUT_DURATION)
-        self.base.Unsubscribe(notification_handle)
+            gripper_command = Base_pb2.GripperCommand()
+            finger = gripper_command.gripper.finger.add()
+            finger.finger_identifier = 1  # or 0 for Gen3 hardware
+            finger.value = goal["gripper"]  # adjust if you use meters vs normalized
+            gripper_command.mode = Base_pb2.GRIPPER_POSITION
+            self.base.SendGripperCommand(gripper_command)
 
-        if finished:
-            #print("Cartesian movement completed")
-            pass
-        else:
-            #print("Timeout on action notification wait")
-            pass
+            e = threading.Event()
+            notification_handle = self.base.OnNotificationActionTopic(
+                self.check_for_end_or_abort(e),
+                Base_pb2.NotificationOptions()
+            )
 
-        # one last thing:
-        #self.send_gripper_command(self.goal_position["gripper"])
-        return finished
+            #print("Executing action")
+            self.base.ExecuteAction(action)
+
+            #print("Waiting for movement to finish ...")
+            finished = e.wait(TIMEOUT_DURATION)
+            self.base.Unsubscribe(notification_handle)
+            return finished
+        except Exception as e:
+            print(f"Error: {e}")
+            raise Exception("Action writer thread failed!")
 
     def send_action(self, action):
-        self.goal_position = action
+        if action["theta_y"] > 0.01:
+            print(f"Setting goal position (delta) to {action}")
+        #with self.goal_lock:
+        self.goal_position["delta_x"] = action["delta_x"]
+        self.goal_position["delta_y"] = action["delta_y"]
+        self.goal_position["delta_z"] = action["delta_z"]
+        self.goal_position["theta_x"] = action["theta_x"]
+        self.goal_position["theta_y"] = action["theta_y"]
+        self.goal_position["theta_z"] = action["theta_z"]
+        self.goal_position["gripper"] = action["gripper"]
+        if action["theta_y"] > 0.01:
+            print(f"[send_action] goal position {self.goal_position} (ID: {id(self.goal_position)})")
+        
         return self.goal_position
 
     def check_for_end_or_abort(self, e):

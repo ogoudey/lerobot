@@ -179,30 +179,35 @@ def unrecorded_teleop_loop_no_ik(
     start = time.perf_counter()
     print("Unrecorded Teleop loop starting...")
     while True:
-        loop_start = time.perf_counter()
-        action = teleop.get_action()
-        print(f"{action}")
-            
-        robot.send_action(action) # comment for mock?
+        try:
+            loop_start = time.perf_counter()
+            action = teleop.get_action()
+            #print(f"{action}")
+            if action["theta_y"] > 0.01:
+                print(f"[teleoperate] goal position {action}") 
+            robot.send_action(action) # comment for mock?
 
-        for angle, reader in reader_assignments.items():
-            if type(teleop).__name__ == "UnityEndEffectorTeleop" and angle == "onboard":
-                #print(f"Sending projection to Teleop")
-                if not reader.frame is None:
-                    teleop.project(reader.frame.copy())
+            for angle, reader in reader_assignments.items():
+                if type(teleop).__name__ == "UnityEndEffectorTeleop" and angle == "onboard":
+                    #print(f"Sending projection to Teleop")
+                    if not reader.frame is None:
+                        teleop.project(reader.frame.copy())
+                    else:
+                        print(f"Reader has no frame")
                 else:
-                    print(f"Reader has no frame")
-            else:
-                #print(f"Not sending projection")
-                pass
-        
-        dt_s = time.perf_counter() - loop_start
-        busy_wait(1 / fps - dt_s)
+                    #print(f"Not sending projection")
+                    pass
+            
+            dt_s = time.perf_counter() - loop_start
+            busy_wait(1 / fps - dt_s)
 
-        loop_s = time.perf_counter() - loop_start
-        
-        if duration is not None and time.perf_counter() - start >= duration:
-            return
+            loop_s = time.perf_counter() - loop_start
+            
+            if duration is not None and time.perf_counter() - start >= duration:
+                return
+        except Exception as e:
+            print(f"Error: {e} in unrecorded teleop loop no ik")
+    
 
 
 def unrecorded_teleop_loop(
@@ -235,7 +240,7 @@ def unrecorded_teleop_loop(
     teleop.kinematics.robot.update_kinematics()
                 
     start = time.perf_counter()
-    print("Teleop loop starting...")
+    print("UnrecordedTeleop loop starting...")
     while True:
         loop_start = time.perf_counter()
         joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])

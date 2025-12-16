@@ -347,25 +347,27 @@ class MockDatasetRecorder:
 
 
 class RawTeleopRunner:
-    def __init__(self, teleop_config, reader_assignments):
+    def __init__(self, robot, teleop_config, reader_assignments):
         self.teleop_config = teleop_config
         self.reader_assignments = reader_assignments
-        
+        self.robot = robot
     # import osmething other than teleop_loop
-    def run(self, robot, with_ik=False):
+    def run(self, with_ik=False):
         teleop = make_teleoperator_from_config(self.teleop_config)
         teleop.connect()
 
         cameras = list(self.reader_assignments.values())
         start_cameras(cameras)
-        
+
+        self.robot.configure()
+
         input("Ready to enter loop?")
         while True:
             try:
                 if with_ik:
-                    unrecorded_teleop_loop(teleop, robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.teleop_time_s, verbose=False) # send IPwebcam to teleop loop 
+                    unrecorded_teleop_loop(teleop, self.robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.teleop_time_s, verbose=False) # send IPwebcam to teleop loop 
                 else:
-                    unrecorded_teleop_loop_no_ik(teleop, robot, 30, 400, self.reader_assignments) # send IPwebcam to teleop loop                     
+                    unrecorded_teleop_loop_no_ik(teleop, self.robot, 30, 400, self.reader_assignments) # send IPwebcam to teleop loop                     
             except KeyboardInterrupt:
                 input("[hit Enter to catch me]\n")
                 for t in range(60, 0, -1):
@@ -373,11 +375,11 @@ class RawTeleopRunner:
                     time.sleep(0.05)
                 logging.info("\rBye!      ") 
                 
-                robot.bus.disable_torque()
+                self.robot.bus.disable_torque()
                 if self.teleop_config.display_data:
                     rr.rerun_shutdown()
                 teleop.disconnect()
-                robot.disconnect()
+                self.robot.disconnect()
                 break   
 
 class MockRawRunner:
@@ -472,9 +474,8 @@ def create_raw_teleop_mock(use_laptop_camera=False):
 
 def create_teleop_unrecorded_interaction(reader_assignments=None):
     robot, robot_config = create_body()
-    robot.configure()
     human_policy = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
-    return RawTeleopRunner(human_policy, reader_assignments)
+    return RawTeleopRunner(robot, human_policy, reader_assignments)
     
 
 def create_unrecorded_mock_interaction(dataset_name="mock"):
@@ -566,7 +567,6 @@ def main():
 
     #return
 
-    b, robot_config = create_body(KinovaGen3EndEffector)
     ob = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
     side = USBCameraReader.get_cap(6)
     ra = {
@@ -574,7 +574,7 @@ def main():
         "onboard": WebcamReader(ob),
     }
     r = create_teleop_unrecorded_interaction(ra)
-    r.run(b)
+    r.run()
     
     #dataset_recorder = create_teleop_recording_kinova_interaction()
     #dataset_recorder.record()

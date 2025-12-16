@@ -140,7 +140,7 @@ def pose_listener(shared):
                         shared["theta_x"], shared["theta_y"], shared["theta_z"] = float(roll), float(pitch), float(yaw)
                         shared["gripper"] = transform_gripper["gripper"]
 
-                        #print(f"Shared delta updated to {shared}")
+                        
                     last_pose["px"] = transform_gripper["px"]
                     last_pose["py"] = transform_gripper["py"]
                     last_pose["pz"] = transform_gripper["pz"]
@@ -149,6 +149,8 @@ def pose_listener(shared):
                     last_pose["ry"] = transform_gripper["ry"]
                     last_pose["rz"] = transform_gripper["rz"]
                     last_pose["rw"] = transform_gripper["rw"]
+                    if shared["theta_y"] > 0.01:
+                        print(f"[pose_listener] {shared}")
                 except KeyError as e:
                     print(f"{transform_gripper} is not the expected transform format... ({e})")
                 except Exception as e:
@@ -284,7 +286,7 @@ class UnityEndEffectorTeleop(Teleoperator):
 
     def get_action(self) -> dict[str, Any]:
         
-        if random.random() < 0.01:
+        if random.random() < 0.005:
             print(f"Target pos: {self.target_pos}")
 
         if not self.is_connected:
