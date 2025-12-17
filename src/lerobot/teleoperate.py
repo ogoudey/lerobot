@@ -184,7 +184,8 @@ def unrecorded_teleop_loop_no_ik(
             action = teleop.get_action()
             #print(f"{action}")
             if action["theta_y"] > 0.01:
-                print(f"[teleoperate] goal position {action}") 
+                #print(f"[teleoperate] goal position {action}") 
+                pass
             robot.send_action(action) # comment for mock?
 
             for angle, reader in reader_assignments.items():

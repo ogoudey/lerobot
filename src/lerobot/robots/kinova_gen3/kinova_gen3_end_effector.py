@@ -38,7 +38,7 @@ class KinovaGen3EndEffector(Robot):
 
     def __init__(self, config: KinovaGen3EndEffectorConfig):
         super().__init__(config)
-        self.goal_position = {"delta_x": 0.0, "delta_y": 0.0, "delta_z": 0.0, "theta_x": 0.0, "theta_y": 0.0, "theta_z": 0.0, "gripper": 0.0}
+        self.goal_position = {"x": 0.0, "y": 0.0, "z": 0.0, "theta_x": 0.0, "theta_x": 0.0, "theta_x": 0.0, "gripper": 0.0}
         self.goal_lock = threading.Lock()
         self.t = threading.Thread(target=self.ee_writer)
         self.config = config
@@ -207,6 +207,8 @@ class KinovaGen3EndEffector(Robot):
                 
             self.time2reachgoal = time.time()
 
+
+            
             goal = goal_position.copy()
             if goal["theta_y"] > 0.01:
                 print(f"[send_cartesian] goal position {goal}")
@@ -217,16 +219,26 @@ class KinovaGen3EndEffector(Robot):
             action.application_data = ""
 
             feedback = self.base_cyclic.RefreshFeedback()
-            
-            scale = .5 # for safety
-            angular_scale = 50 # for something
+
+            present_pos = {
+                "x": feedback.base.tool_pose_x,
+                "y": feedback.base.tool_pose_y,
+                "z": feedback.base.tool_pose_z,
+                "theta_x": feedback.base.tool_pose_theta_x,
+                "theta_y": feedback.base.tool_pose_theta_y,
+                "theta_z": feedback.base.tool_pose_theta_z,
+            }
+
+            input(f"Present pose:\n{present_pos}. Goal:{goal}")
+            scale = .1 # for safety
+            angular_scale = 1 # for something
             cartesian_pose = action.reach_pose.target_pose
-            cartesian_pose.x = feedback.base.tool_pose_x + goal["delta_x"]*scale          # (meters)
-            cartesian_pose.y = feedback.base.tool_pose_y + goal["delta_y"]*scale
-            cartesian_pose.z = feedback.base.tool_pose_z + goal["delta_z"]  *scale
-            cartesian_pose.theta_x = feedback.base.tool_pose_theta_x + goal["theta_x"]*angular_scale 
-            cartesian_pose.theta_y = feedback.base.tool_pose_theta_y + goal["theta_y"]*angular_scale 
-            cartesian_pose.theta_z = feedback.base.tool_pose_theta_z + goal["theta_z"]*angular_scale 
+            cartesian_pose.x = goal["x"]
+            cartesian_pose.y = goal["y"]
+            cartesian_pose.z = goal["z"]
+            cartesian_pose.theta_x = goal["theta_x"] 
+            cartesian_pose.theta_y = goal["theta_y"] 
+            cartesian_pose.theta_z = goal["theta_z"] 
 
             gripper_command = Base_pb2.GripperCommand()
             finger = gripper_command.gripper.finger.add()
@@ -255,9 +267,9 @@ class KinovaGen3EndEffector(Robot):
         if action["theta_y"] > 0.01:
             print(f"Setting goal position (delta) to {action}")
         #with self.goal_lock:
-        self.goal_position["delta_x"] = action["delta_x"]
-        self.goal_position["delta_y"] = action["delta_y"]
-        self.goal_position["delta_z"] = action["delta_z"]
+        self.goal_position["x"] = action["x"]
+        self.goal_position["y"] = action["y"]
+        self.goal_position["z"] = action["z"]
         self.goal_position["theta_x"] = action["theta_x"]
         self.goal_position["theta_y"] = action["theta_y"]
         self.goal_position["theta_z"] = action["theta_z"]
@@ -351,3 +363,4 @@ class KinovaGen3EndEffector(Robot):
         else:
             print("Timeout on action notification wait")
         return finished
+    

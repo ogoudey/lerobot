@@ -128,43 +128,20 @@ def pose_listener(shared):
 
                 # Last pose is in Unity coords too
                 try:
-                    if "px" in last_pose:
-                        shared["delta_x"] = transform_gripper["pz"] - last_pose["pz"]
-                        shared["delta_y"] = transform_gripper["py"] - last_pose["py"]
-                        shared["delta_z"] = transform_gripper["px"] - last_pose["px"]
+                    shared["x"] = transform_gripper["px"]
+                    shared["y"] = transform_gripper["py"] - 0.5 # On rolly chair to 0,0,0 offset
+                    shared["z"] = transform_gripper["pz"]
 
-                        q_curr = [transform_gripper["rx"], transform_gripper["ry"], transform_gripper["rz"], transform_gripper["rw"]]
-                        q_last = [last_pose["rx"], last_pose["ry"], last_pose["rz"], last_pose["rw"]]
-                        r_delta = R.from_quat(q_curr) * R.from_quat(q_last).inv()
-
-                        R_u2k = np.array([
-                            [0, 0, 1],  # Kx
-                            [0, 1, 0],  # Ky
-                            [1, 0, 0],  # Kz
-                        ])
-                        R_delta_u = r_delta.as_matrix()
-
-                        R_delta_k = R_u2k @ R_delta_u @ R_u2k.T
-
-                        r_delta_k = R.from_matrix(R_delta_k)
-
-                        roll, pitch, yaw = r_delta_k.as_euler("xyz", degrees=True)
-
-                        shared["theta_x"], shared["theta_y"], shared["theta_z"] = float(roll), float(pitch), float(yaw)
-                        
-                        shared["gripper"] = transform_gripper["gripper"]
-
-                        
-                    last_pose["px"] = transform_gripper["px"]
-                    last_pose["py"] = transform_gripper["py"]
-                    last_pose["pz"] = transform_gripper["pz"]
+                    shared["theta_x"] = transform_gripper["rx"] % 360
+                    shared["theta_y"] = transform_gripper["ry"] % 360
+                    shared["theta_z"] = transform_gripper["rz"] % 360
                     
-                    last_pose["rx"] = transform_gripper["rx"]
-                    last_pose["ry"] = transform_gripper["ry"]
-                    last_pose["rz"] = transform_gripper["rz"]
-                    last_pose["rw"] = transform_gripper["rw"]
+                    shared["gripper"] = transform_gripper["gripper"]
+
+
                     if shared["theta_y"] > 0.01:
-                        print(f"[pose_listener] {shared}")
+                        #print(f"[pose_listener] {shared}")
+                        pass
                 except KeyError as e:
                     print(f"{transform_gripper} is not the expected transform format... ({e})")
                 except Exception as e:
@@ -280,10 +257,9 @@ class UnityEndEffectorTeleop(Teleoperator):
         print("Connecting...")
         self.transform.start()
         self.connected = True
-        print(f"Waiting for teleop data... (delta_x not in {self.target_pos})", end="\n")
-        while not "delta_x" in self.target_pos: # until the x target moves from its initial pose (the teleop data is doing something...)
+        while not "x" in self.target_pos: # until the x target moves from its initial pose (the teleop data is doing something...)
             if random.random() < 0.1:
-                print(f"Waiting for teleop data... (delta_x not in {self.target_pos})", end="\n")
+                print(f"Waiting for teleop data... (x not in {self.target_pos})", end="\r")
             time.sleep(0.1)
         print(f"Connected to teleop data")
         try:
