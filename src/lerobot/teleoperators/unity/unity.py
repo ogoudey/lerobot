@@ -125,19 +125,33 @@ def pose_listener(shared):
                 #print(f"Updating local data: {transform}")
                 #print(f"{heard_poses} poses heard; input: {transform_gripper}")
 
-            
+
+                # Last pose is in Unity coords too
                 try:
                     if "px" in last_pose:
-                        shared["delta_x"] = transform_gripper["px"] - last_pose["px"]
+                        shared["delta_x"] = transform_gripper["pz"] - last_pose["pz"]
                         shared["delta_y"] = transform_gripper["py"] - last_pose["py"]
-                        shared["delta_z"] = transform_gripper["pz"] - last_pose["pz"]
+                        shared["delta_z"] = transform_gripper["px"] - last_pose["px"]
 
                         q_curr = [transform_gripper["rx"], transform_gripper["ry"], transform_gripper["rz"], transform_gripper["rw"]]
                         q_last = [last_pose["rx"], last_pose["ry"], last_pose["rz"], last_pose["rw"]]
                         r_delta = R.from_quat(q_curr) * R.from_quat(q_last).inv()
 
-                        roll, pitch, yaw = r_delta.as_euler("xyz", degrees=False)
+                        R_u2k = np.array([
+                            [0, 0, 1],  # Kx
+                            [0, 1, 0],  # Ky
+                            [1, 0, 0],  # Kz
+                        ])
+                        R_delta_u = r_delta.as_matrix()
+
+                        R_delta_k = R_u2k @ R_delta_u @ R_u2k.T
+
+                        r_delta_k = R.from_matrix(R_delta_k)
+
+                        roll, pitch, yaw = r_delta_k.as_euler("xyz", degrees=True)
+
                         shared["theta_x"], shared["theta_y"], shared["theta_z"] = float(roll), float(pitch), float(yaw)
+                        
                         shared["gripper"] = transform_gripper["gripper"]
 
                         

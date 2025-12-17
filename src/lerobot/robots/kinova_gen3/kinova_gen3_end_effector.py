@@ -26,7 +26,7 @@ from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
 
 from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2, Common_pb2
 
-TIMEOUT_DURATION=1.0
+TIMEOUT_DURATION=20.0
 
 class KinovaGen3EndEffector(Robot):
     """
@@ -44,6 +44,10 @@ class KinovaGen3EndEffector(Robot):
         self.config = config
         print("main thread self id:", id(self))
         print("main thread goal_position id:", id(self.goal_position))
+
+        self.last_goal = {}
+        self.time2newgoal = 0
+        self.time2reachgoal = 0
 
     def ee_writer(self):
         print("ee_writer self id:", id(self))
@@ -109,7 +113,7 @@ class KinovaGen3EndEffector(Robot):
                             print(f"[ee_writer] goal position {self.goal_position}")
                         success &= self.send_cartesian(self.goal_position)
                         dt_s = time.perf_counter() - loop_start
-                        busy_wait(1 / 30 - dt_s)
+                        #busy_wait(1 / 30 - dt_s)
                 except KeyboardInterrupt:
                     print(f"Exiting action thread")
                     self.running = False
@@ -197,6 +201,11 @@ class KinovaGen3EndEffector(Robot):
 
     def send_cartesian(self, goal_position):
         try:
+            if not goal_position == self.last_goal:
+                #print(f"T goal update: {time.time() - self.time2newgoal}")
+                self.last_goal = goal_position.copy()
+                
+            self.time2reachgoal = time.time()
 
             goal = goal_position.copy()
             if goal["theta_y"] > 0.01:
@@ -209,15 +218,15 @@ class KinovaGen3EndEffector(Robot):
 
             feedback = self.base_cyclic.RefreshFeedback()
             
-            scale = .1 # for safety
-
+            scale = .5 # for safety
+            angular_scale = 50 # for something
             cartesian_pose = action.reach_pose.target_pose
             cartesian_pose.x = feedback.base.tool_pose_x + goal["delta_x"]*scale          # (meters)
             cartesian_pose.y = feedback.base.tool_pose_y + goal["delta_y"]*scale
             cartesian_pose.z = feedback.base.tool_pose_z + goal["delta_z"]  *scale
-            cartesian_pose.theta_x = feedback.base.tool_pose_theta_x + goal["theta_x"] * 10
-            cartesian_pose.theta_y = feedback.base.tool_pose_theta_y + goal["theta_y"] * 10
-            cartesian_pose.theta_z = feedback.base.tool_pose_theta_z + goal["theta_z"] * 10
+            cartesian_pose.theta_x = feedback.base.tool_pose_theta_x + goal["theta_x"]*angular_scale 
+            cartesian_pose.theta_y = feedback.base.tool_pose_theta_y + goal["theta_y"]*angular_scale 
+            cartesian_pose.theta_z = feedback.base.tool_pose_theta_z + goal["theta_z"]*angular_scale 
 
             gripper_command = Base_pb2.GripperCommand()
             finger = gripper_command.gripper.finger.add()
@@ -227,18 +236,17 @@ class KinovaGen3EndEffector(Robot):
             self.base.SendGripperCommand(gripper_command)
 
             e = threading.Event()
-            notification_handle = self.base.OnNotificationActionTopic(
-                self.check_for_end_or_abort(e),
-                Base_pb2.NotificationOptions()
-            )
+            notification_handle = self.base.OnNotificationActionTopic(self.check_for_end_or_abort(e), Base_pb2.NotificationOptions())
 
-            #print("Executing action")
             self.base.ExecuteAction(action)
 
-            #print("Waiting for movement to finish ...")
             finished = e.wait(TIMEOUT_DURATION)
+            #print(f"T send_cartesian done: {time.time() - self.time2reachgoal}")
+            self.time2newgoal = time.time()
             self.base.Unsubscribe(notification_handle)
-            return finished
+            dt_s = time.perf_counter() - self.time2reachgoal
+            #busy_wait(1 / 30 - dt_s)
+            return True
         except Exception as e:
             print(f"Error: {e}")
             raise Exception("Action writer thread failed!")
