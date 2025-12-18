@@ -14,7 +14,7 @@ from lerobot.model.kinematics import RobotKinematics
 from lerobot.motors import Motor, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
 from lerobot.utils.robot_utils import busy_wait
-
+import math
 from .config_kinova_gen3_end_effector import KinovaGen3EndEffectorConfig
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,10 @@ class KinovaGen3EndEffector(Robot):
         self.last_goal = {}
         self.time2newgoal = 0
         self.time2reachgoal = 0
+        
+        self.gain_pos = 1.0
+        self.gain_rot = 1.0
+
 
     def ee_writer(self):
         log("ee_writer self id: {id(self)}")
@@ -127,9 +131,7 @@ class KinovaGen3EndEffector(Robot):
                     log("ee_writer goal_position id: {id(self.goal_position)}")
                     log(f"Starting action writer loop")
                     while True:
-                        loop_start = time.perf_counter()
-                        #with self.goal_lock:
-                        
+                        loop_start = time.perf_counter()                        
                         log(f"[ee_writer] goal position {self.goal_position}")
                         success &= self.send_cartesian(self.goal_position)
                         dt_s = time.perf_counter() - loop_start
@@ -233,62 +235,56 @@ class KinovaGen3EndEffector(Robot):
             log(f"[send_cartesian] goal position {goal}")
             
             #log("Starting Cartesian action movement ...")
-            action = Base_pb2.Action()
-            action.name = "Cartesian + gripper"
-            action.application_data = ""
+            try:
+                twist_cmd = Base_pb2.TwistCommand()
+                twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+                feedback = self.base_cyclic.RefreshFeedback()
 
-            feedback = self.base_cyclic.RefreshFeedback()
-
-            present_pos = {
-                "x": feedback.base.tool_pose_x,
-                "y": feedback.base.tool_pose_y,
-                "z": feedback.base.tool_pose_z,
-                "theta_x": feedback.base.tool_pose_theta_x,
-                "theta_y": feedback.base.tool_pose_theta_y,
-                "theta_z": feedback.base.tool_pose_theta_z,
-            }
-
-            log(f"Present pose:\n{present_pos}")
-            log(f"Init pos")
-
-            scale = .1 # for safety
-            angular_scale = 1 # for something
-            cartesian_pose = action.reach_pose.target_pose
-            target_global_pose = {
-                "x": self.init_pos["x"] + goal["x"],
-                "y": self.init_pos["y"] + goal["y"],
-                "z": self.init_pos["z"] + goal["z"],
-                "theta_x": self.init_pos["theta_x"] + goal["theta_x"],
-                "theta_y": self.init_pos["theta_y"] + goal["theta_y"],
-                "theta_z": self.init_pos["theta_z"] + goal["theta_z"]  
-            }
-            cartesian_pose.x = target_global_pose["x"]
-            cartesian_pose.y = target_global_pose["y"]
-            cartesian_pose.z = target_global_pose["z"]
-            cartesian_pose.theta_x = target_global_pose["theta_x"]
-            cartesian_pose.theta_y = target_global_pose["theta_y"]
-            cartesian_pose.theta_z = target_global_pose["theta_z"]
-
-
-            """
-            gripper_command = Base_pb2.GripperCommand()
-            finger = gripper_command.gripper.finger.add()
-            finger.finger_identifier = 1  # or 0 for Gen3 hardware
-            finger.value = goal["gripper"]  # adjust if you use meters vs normalized
-            gripper_command.mode = Base_pb2.GRIPPER_POSITION
-            self.base.SendGripperCommand(gripper_command)
-            """
-            e = threading.Event()
-            notification_handle = self.base.OnNotificationActionTopic(self.check_for_end_or_abort(e), Base_pb2.NotificationOptions())
-
-            self.base.ExecuteAction(action)
-
-            finished = e.wait(TIMEOUT_DURATION)
-            #log(f"T send_cartesian done: {time.time() - self.time2reachgoal}")
+                present_pos = {
+                    "x": feedback.base.tool_pose_x,
+                    "y": feedback.base.tool_pose_y,
+                    "z": feedback.base.tool_pose_z,
+                    "theta_x": feedback.base.tool_pose_theta_x,
+                    "theta_y": feedback.base.tool_pose_theta_y,
+                    "theta_z": feedback.base.tool_pose_theta_z,
+                }
+                target_global_pose = {
+                    "x": self.init_pos["x"] + goal["x"],
+                    "y": self.init_pos["y"] + goal["y"],
+                    "z": self.init_pos["z"] + goal["z"],
+                    "theta_x": self.init_pos["theta_x"] + goal["theta_x"],
+                    "theta_y": self.init_pos["theta_y"] + goal["theta_y"],
+                    "theta_z": self.init_pos["theta_z"] + goal["theta_z"]  
+                }
+                
+                error = {
+                    "x": target_global_pose["x"] - present_pos["x"],
+                    "y": target_global_pose["y"] - present_pos["y"],
+                    "z": target_global_pose["z"] - present_pos["z"],
+                    "theta_x": self.wrap_deg(target_global_pose["theta_x"] - present_pos["theta_x"]) * math.pi / 180.0,
+                    "theta_y": self.wrap_deg(target_global_pose["theta_y"] - present_pos["theta_y"]) * math.pi / 180.0,
+                    "theta_z": self.wrap_deg(target_global_pose["theta_z"] - present_pos["theta_z"]) * math.pi / 180.0,
+                } # convert from degrees to twist's expected radians
+                log(f"Error:\n{error}")
+                twist = twist_cmd.twist
+                twist.linear_x = error["x"] * self.gain_pos
+                twist.linear_y = error["y"] * self.gain_pos
+                twist.linear_z = error["z"] * self.gain_pos
+                twist.angular_x = error["theta_x"] * self.gain_rot
+                twist.angular_y = error["theta_y"] * self.gain_rot
+                twist.angular_z = error["theta_z"] * self.gain_rot
+                self.base.SendTwistCommand(twist_cmd)
+                log(f"Twist sent: {twist_cmd}")
+                pos_norm = (error["x"]**2 + error["y"]**2 + error["z"]**2)**0.5
+                rot_norm = (error["theta_x"]**2 + error["theta_y"]**2 + error["theta_z"]**2)**0.5
+                log(f"Distance to goal: {pos_norm}, rotation to goal {rot_norm}")
+                if pos_norm < 0.002 and rot_norm < 0.01  * math.pi / 180.0:
+                    log("Reached goal - stopping")
+                    self.base.Stop()
+            except Exception as e:
+                log(f"{e}")
             self.time2newgoal = time.time()
-            self.base.Unsubscribe(notification_handle)
             dt_s = time.perf_counter() - self.time2reachgoal
-            #busy_wait(1 / 30 - dt_s)
             return True
         except Exception as e:
             log(f"Error: {e}")
@@ -306,10 +302,13 @@ class KinovaGen3EndEffector(Robot):
         self.goal_position["theta_z"] = action["theta_z"]
         self.goal_position["gripper"] = action["gripper"]
 
-        log(f"[send_action] goal position {self.goal_position} (ID: {id(self.goal_position)})")
+        #log(f"[send_action] goal position {self.goal_position} (ID: {id(self.goal_position)})")
         
         return self.goal_position
-
+    
+    def wrap_deg(self, angle):
+        return (angle + 180) % 360 - 180
+    
     def check_for_end_or_abort(self, e):
         """Return a closure checking for END or ABORT notifications
 
