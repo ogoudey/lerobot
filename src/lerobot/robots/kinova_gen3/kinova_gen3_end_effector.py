@@ -7,7 +7,7 @@ import threading
 from functools import cached_property
 import random
 import numpy as np
-
+from datetime import datetime
 from lerobot.cameras import make_cameras_from_configs
 from lerobot.errors import DeviceNotConnectedError
 from lerobot.model.kinematics import RobotKinematics
@@ -26,6 +26,25 @@ from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
 
 from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2, Common_pb2
 
+home_position = {'x': 0.5766636729240417, 'y': 0.0013102991, 'z': 0.4336315989494324, 'theta_x': 90.01219940185547, 'theta_y': 2.240478352177888e-05, 'theta_z': 89.99665069580078}
+
+# Unclassy log function
+def log(message: str, log_name: str="KinovaGen3EndEffector"):
+    # Ensure logs directory exists
+    os.makedirs("logs", exist_ok=True)
+    
+    # Define log file path
+    log_path = os.path.join("logs", f"{log_name}.log")
+    
+    # Timestamp the message
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    formatted_message = f"[{timestamp}] {message}\n"
+    
+    # Append the message to the log file
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(formatted_message)
+
+
 TIMEOUT_DURATION=20.0
 
 class KinovaGen3EndEffector(Robot):
@@ -38,25 +57,27 @@ class KinovaGen3EndEffector(Robot):
 
     def __init__(self, config: KinovaGen3EndEffectorConfig):
         super().__init__(config)
-        self.goal_position = {"x": 0.0, "y": 0.0, "z": 0.0, "theta_x": 0.0, "theta_x": 0.0, "theta_x": 0.0, "gripper": 0.0}
+        self.goal_position = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'theta_x': 0.0, 'theta_y': 0.0, 'theta_z': 0.0}
+
+        self.init_pos = home_position
         self.goal_lock = threading.Lock()
         self.t = threading.Thread(target=self.ee_writer)
         self.config = config
-        print("main thread self id:", id(self))
-        print("main thread goal_position id:", id(self.goal_position))
+        log("main thread self id: {id(self)}")
+        log("main thread goal_position id: {id(self.goal_position)}")
 
         self.last_goal = {}
         self.time2newgoal = 0
         self.time2reachgoal = 0
 
     def ee_writer(self):
-        print("ee_writer self id:", id(self))
-        print("ee_writer goal_position id:", id(self.goal_position))
-        print(f"Importing utilities")
+        log("ee_writer self id: {id(self)}")
+        log("ee_writer goal_position id: {id(self.goal_position)}")
+        log(f"Importing utilities")
         from . import utilities
-        print(f"{utilities.__file__}")
+        log(f"{utilities.__file__}")
         args = utilities.parseConnectionArguments()
-        print(f"{args}")
+        log(f"{args}")
         try:
             with utilities.DeviceConnection.createTcpConnection(args) as router:
 
@@ -87,7 +108,7 @@ class KinovaGen3EndEffector(Robot):
                     self.actuator_command.velocity = 0.0
                     self.actuator_command.torque_joint = 0.0
                     self.actuator_command.command_id = 0
-                    print("Position = ", actuator.position)
+                    log("Position = ", actuator.position)
 
                 # Save servoing mode before changing it
                 self.previous_servoing_mode = self.base.GetServoingMode()
@@ -99,29 +120,28 @@ class KinovaGen3EndEffector(Robot):
                 # added for gripper low-level
                 """
                 success = True
-                print(f"Moving to home position")
+                log(f"Moving to home position")
                 success &= self.move_to_home_position()
 
                 try:
-                    print("ee_writer goal_position id:", id(self.goal_position))
-                    print(f"Starting action writer loop")
+                    log("ee_writer goal_position id: {id(self.goal_position)}")
+                    log(f"Starting action writer loop")
                     while True:
                         loop_start = time.perf_counter()
                         #with self.goal_lock:
                         
-                        if self.goal_position["theta_y"] > 0.01:
-                            print(f"[ee_writer] goal position {self.goal_position}")
+                        log(f"[ee_writer] goal position {self.goal_position}")
                         success &= self.send_cartesian(self.goal_position)
                         dt_s = time.perf_counter() - loop_start
                         #busy_wait(1 / 30 - dt_s)
                 except KeyboardInterrupt:
-                    print(f"Exiting action thread")
+                    log(f"Exiting action thread")
                     self.running = False
                     raise KeyboardInterrupt("Exited")
         except KeyboardInterrupt:
             return
         except Exception as e:
-            print(f"Error {e}. could not initialize.")
+            log(f"Error {e}. could not initialize.")
     def connect(self, calibrate=False):
         pass
     
@@ -202,7 +222,7 @@ class KinovaGen3EndEffector(Robot):
     def send_cartesian(self, goal_position):
         try:
             if not goal_position == self.last_goal:
-                #print(f"T goal update: {time.time() - self.time2newgoal}")
+                #log(f"T goal update: {time.time() - self.time2newgoal}")
                 self.last_goal = goal_position.copy()
                 
             self.time2reachgoal = time.time()
@@ -210,10 +230,9 @@ class KinovaGen3EndEffector(Robot):
 
             
             goal = goal_position.copy()
-            if goal["theta_y"] > 0.01:
-                print(f"[send_cartesian] goal position {goal}")
+            log(f"[send_cartesian] goal position {goal}")
             
-            #print("Starting Cartesian action movement ...")
+            #log("Starting Cartesian action movement ...")
             action = Base_pb2.Action()
             action.name = "Cartesian + gripper"
             action.application_data = ""
@@ -229,43 +248,55 @@ class KinovaGen3EndEffector(Robot):
                 "theta_z": feedback.base.tool_pose_theta_z,
             }
 
-            input(f"Present pose:\n{present_pos}. Goal:{goal}")
+            log(f"Present pose:\n{present_pos}")
+            log(f"Init pos")
+
             scale = .1 # for safety
             angular_scale = 1 # for something
             cartesian_pose = action.reach_pose.target_pose
-            cartesian_pose.x = goal["x"]
-            cartesian_pose.y = goal["y"]
-            cartesian_pose.z = goal["z"]
-            cartesian_pose.theta_x = goal["theta_x"] 
-            cartesian_pose.theta_y = goal["theta_y"] 
-            cartesian_pose.theta_z = goal["theta_z"] 
+            target_global_pose = {
+                "x": self.init_pos["x"] + goal["x"],
+                "y": self.init_pos["y"] + goal["y"],
+                "z": self.init_pos["z"] + goal["z"],
+                "theta_x": self.init_pos["theta_x"] + goal["theta_x"],
+                "theta_y": self.init_pos["theta_y"] + goal["theta_y"],
+                "theta_z": self.init_pos["theta_z"] + goal["theta_z"]  
+            }
+            cartesian_pose.x = target_global_pose["x"]
+            cartesian_pose.y = target_global_pose["y"]
+            cartesian_pose.z = target_global_pose["z"]
+            cartesian_pose.theta_x = target_global_pose["theta_x"]
+            cartesian_pose.theta_y = target_global_pose["theta_y"]
+            cartesian_pose.theta_z = target_global_pose["theta_z"]
 
+
+            """
             gripper_command = Base_pb2.GripperCommand()
             finger = gripper_command.gripper.finger.add()
             finger.finger_identifier = 1  # or 0 for Gen3 hardware
             finger.value = goal["gripper"]  # adjust if you use meters vs normalized
             gripper_command.mode = Base_pb2.GRIPPER_POSITION
             self.base.SendGripperCommand(gripper_command)
-
+            """
             e = threading.Event()
             notification_handle = self.base.OnNotificationActionTopic(self.check_for_end_or_abort(e), Base_pb2.NotificationOptions())
 
             self.base.ExecuteAction(action)
 
             finished = e.wait(TIMEOUT_DURATION)
-            #print(f"T send_cartesian done: {time.time() - self.time2reachgoal}")
+            #log(f"T send_cartesian done: {time.time() - self.time2reachgoal}")
             self.time2newgoal = time.time()
             self.base.Unsubscribe(notification_handle)
             dt_s = time.perf_counter() - self.time2reachgoal
             #busy_wait(1 / 30 - dt_s)
             return True
         except Exception as e:
-            print(f"Error: {e}")
+            log(f"Error: {e}")
             raise Exception("Action writer thread failed!")
 
     def send_action(self, action):
         if action["theta_y"] > 0.01:
-            print(f"Setting goal position (delta) to {action}")
+            log(f"Setting goal position (delta) to {action}")
         #with self.goal_lock:
         self.goal_position["x"] = action["x"]
         self.goal_position["y"] = action["y"]
@@ -274,8 +305,8 @@ class KinovaGen3EndEffector(Robot):
         self.goal_position["theta_y"] = action["theta_y"]
         self.goal_position["theta_z"] = action["theta_z"]
         self.goal_position["gripper"] = action["gripper"]
-        if action["theta_y"] > 0.01:
-            print(f"[send_action] goal position {self.goal_position} (ID: {id(self.goal_position)})")
+
+        log(f"[send_action] goal position {self.goal_position} (ID: {id(self.goal_position)})")
         
         return self.goal_position
 
@@ -287,7 +318,7 @@ class KinovaGen3EndEffector(Robot):
             (will be set when an END or ABORT occurs)
         """
         def check(notification, e = e):
-            #print("EVENT : " + \Base_pb2.ActionEvent.Name(notification.action_event))
+            #log("EVENT : " + \Base_pb2.ActionEvent.Name(notification.action_event))
             if notification.action_event == Base_pb2.ACTION_END \
             or notification.action_event == Base_pb2.ACTION_ABORT:
                 e.set()
@@ -323,7 +354,7 @@ class KinovaGen3EndEffector(Robot):
                     self.motorcmd.position = target_position
 
             except Exception as e:
-                print("Error in refresh: " + str(e))
+                log("Error in refresh: " + str(e))
                 return False
             time.sleep(0.001)
         return True
@@ -335,7 +366,7 @@ class KinovaGen3EndEffector(Robot):
         self.base.SetServoingMode(base_servo_mode)
         
         # Move arm to ready position
-        print("Moving the arm to a safe position")
+        log("Moving the arm to a safe position")
         action_type = Base_pb2.RequestedActionType()
         action_type.action_type = Base_pb2.REACH_JOINT_ANGLES
         action_list = self.base.ReadAllActions(action_type)
@@ -345,7 +376,7 @@ class KinovaGen3EndEffector(Robot):
                 action_handle = action.handle
 
         if action_handle == None:
-            print("Can't reach safe position. Exiting")
+            log("Can't reach safe position. Exiting")
             return False
 
         e = threading.Event()
@@ -359,8 +390,8 @@ class KinovaGen3EndEffector(Robot):
         self.base.Unsubscribe(notification_handle)
 
         if finished:
-            print("Safe position reached")
+            log("Safe position reached")
         else:
-            print("Timeout on action notification wait")
+            log("Timeout on action notification wait")
         return finished
     

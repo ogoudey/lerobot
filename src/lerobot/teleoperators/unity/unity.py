@@ -111,7 +111,7 @@ def pose_listener(shared):
         conn, addr = s.accept()
         print("Connected:", addr)
         # 'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
-        last_pose = {}
+        init_pose = None
         with conn:
             while True:
                 data = conn.recv(1024)
@@ -125,16 +125,24 @@ def pose_listener(shared):
                 #print(f"Updating local data: {transform}")
                 #print(f"{heard_poses} poses heard; input: {transform_gripper}")
 
-
-                # Last pose is in Unity coords too
+                
                 try:
-                    shared["x"] = transform_gripper["px"]
-                    shared["y"] = transform_gripper["py"] - 0.5 # On rolly chair to 0,0,0 offset
-                    shared["z"] = transform_gripper["pz"]
+                    if not init_pose:
+                        init_pose = {
+                            "x": transform_gripper["px"],
+                            "y": transform_gripper["py"],
+                            "z": transform_gripper["pz"],
+                            "theta_x": transform_gripper["rx"] % 360,
+                            "theta_y": transform_gripper["ry"] % 360,
+                            "theta_z": transform_gripper["rz"] % 360
+                        }
+                    shared["x"] = -(transform_gripper["pz"] - init_pose["z"])
+                    shared["y"] = transform_gripper["px"] - init_pose["x"]
+                    shared["z"] = transform_gripper["py"] - init_pose["y"] - 0.2
 
-                    shared["theta_x"] = transform_gripper["rx"] % 360
-                    shared["theta_y"] = transform_gripper["ry"] % 360
-                    shared["theta_z"] = transform_gripper["rz"] % 360
+                    shared["theta_x"] = transform_gripper["rx"] % 360 - init_pose["theta_x"]
+                    shared["theta_y"] = transform_gripper["rz"] % 360 - init_pose["theta_z"]
+                    shared["theta_z"] = -(transform_gripper["ry"] % 360 - init_pose["theta_y"])
                     
                     shared["gripper"] = transform_gripper["gripper"]
 
