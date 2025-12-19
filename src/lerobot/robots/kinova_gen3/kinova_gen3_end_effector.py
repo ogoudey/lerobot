@@ -70,8 +70,11 @@ class KinovaGen3EndEffector(Robot):
         self.time2newgoal = 0
         self.time2reachgoal = 0
         
-        self.gain_pos = 1.0
-        self.gain_rot = 1.0
+        self.gain_pos = 0.2
+        self.gain_rot = 0.5
+
+        self.vel_lim = 0.1
+        self.angular_vel_lim = 5
 
 
     def ee_writer(self):
@@ -91,41 +94,15 @@ class KinovaGen3EndEffector(Robot):
                 
                 # Example core
                 
-                """
-                # added for gripper low-level
-                self.base_command = BaseCyclic_pb2.Command()
-                self.base_command.frame_id = 0
-                self.base_command.interconnect.command_id.identifier = 0
-                self.base_command.interconnect.gripper_command.command_id.identifier = 0
+                
 
-                self.motorcmd = self.base_command.interconnect.gripper_command.motor_cmd.add()
-
-                # Set gripper's initial position velocity and force
-                base_feedback = self.base_cyclic.RefreshFeedback()
-                self.motorcmd.position = base_feedback.interconnect.gripper_feedback.motor[0].position
-                self.motorcmd.velocity = 0
-                self.motorcmd.force = 100
-
-                for actuator in base_feedback.actuators:
-                    self.actuator_command = self.base_command.actuators.add()
-                    self.actuator_command.position = actuator.position
-                    self.actuator_command.velocity = 0.0
-                    self.actuator_command.torque_joint = 0.0
-                    self.actuator_command.command_id = 0
-                    log("Position = ", actuator.position)
-
-                # Save servoing mode before changing it
-                self.previous_servoing_mode = self.base.GetServoingMode()
-
-                # Set base in low level servoing mode
-                servoing_mode_info = Base_pb2.ServoingModeInformation()
-                servoing_mode_info.servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
-                self.base.SetServoingMode(servoing_mode_info)
-                # added for gripper low-level
-                """
+               
                 success = True
                 log(f"Moving to home position")
                 success &= self.move_to_home_position()
+
+                #self.test_twists()
+                input("Continue?")
 
                 try:
                     log("ee_writer goal_position id: {id(self.goal_position)}")
@@ -219,8 +196,59 @@ class KinovaGen3EndEffector(Robot):
     def is_connected(self) -> bool:
         return self.connected
 
+    def test_twists(self):
+        
+        input("thetay and -z")
+        twist_cmd = Base_pb2.TwistCommand()
+        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+        twist = twist_cmd.twist
+        twist.linear_x = 0
+        twist.linear_y = 0
+        twist.linear_z = -0.1
+        twist.angular_x = 0
+        twist.angular_y = 45
+        twist.angular_z = 0
+        self.base.SendTwistCommand(twist_cmd)
+        time.sleep(1)
+        self.base.Stop()
+        input("thetax")
+        twist_cmd = Base_pb2.TwistCommand()
+        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+        twist = twist_cmd.twist
+        twist.linear_x = 0
+        twist.linear_y = 0
+        twist.linear_z = 0
+        twist.angular_x = 45
+        twist.angular_y = 0
+        twist.angular_z = 0
+        self.base.SendTwistCommand(twist_cmd)
+        time.sleep(1)
+        self.base.Stop()
+        input("thetaz")
+        twist_cmd = Base_pb2.TwistCommand()
+        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+        twist = twist_cmd.twist
+        twist.linear_x = 0
+        twist.linear_y = 0
+        twist.linear_z = 0
+        twist.angular_x = 0
+        twist.angular_y = 0
+        twist.angular_z = 45
+        self.base.SendTwistCommand(twist_cmd)
+        time.sleep(1)
+        self.base.Stop()
 
-
+    def get_present_pose(self):
+        feedback = self.base_cyclic.RefreshFeedback()
+        return {
+            "x": feedback.base.tool_pose_x,
+            "y": feedback.base.tool_pose_y,
+            "z": feedback.base.tool_pose_z,
+            "theta_x": feedback.base.tool_pose_theta_x,
+            "theta_y": feedback.base.tool_pose_theta_y,
+            "theta_z": feedback.base.tool_pose_theta_z,
+        }
+    
     def send_cartesian(self, goal_position):
         try:
             if not goal_position == self.last_goal:
@@ -229,7 +257,7 @@ class KinovaGen3EndEffector(Robot):
                 
             self.time2reachgoal = time.time()
 
-
+            present_pos = self.get_present_pose()
             
             goal = goal_position.copy()
             log(f"[send_cartesian] goal position {goal}")
@@ -238,16 +266,7 @@ class KinovaGen3EndEffector(Robot):
             try:
                 twist_cmd = Base_pb2.TwistCommand()
                 twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
-                feedback = self.base_cyclic.RefreshFeedback()
-
-                present_pos = {
-                    "x": feedback.base.tool_pose_x,
-                    "y": feedback.base.tool_pose_y,
-                    "z": feedback.base.tool_pose_z,
-                    "theta_x": feedback.base.tool_pose_theta_x,
-                    "theta_y": feedback.base.tool_pose_theta_y,
-                    "theta_z": feedback.base.tool_pose_theta_z,
-                }
+                
                 target_global_pose = {
                     "x": self.init_pos["x"] + goal["x"],
                     "y": self.init_pos["y"] + goal["y"],
@@ -256,31 +275,39 @@ class KinovaGen3EndEffector(Robot):
                     "theta_y": self.init_pos["theta_y"] + goal["theta_y"],
                     "theta_z": self.init_pos["theta_z"] + goal["theta_z"]  
                 }
+                log(f"Target_global_pose:\n{target_global_pose}")
                 
+                log(f"Present pose:\n{present_pos}")
                 error = {
                     "x": target_global_pose["x"] - present_pos["x"],
                     "y": target_global_pose["y"] - present_pos["y"],
                     "z": target_global_pose["z"] - present_pos["z"],
-                    "theta_x": self.wrap_deg(target_global_pose["theta_x"] - present_pos["theta_x"]) * math.pi / 180.0,
-                    "theta_y": self.wrap_deg(target_global_pose["theta_y"] - present_pos["theta_y"]) * math.pi / 180.0,
-                    "theta_z": self.wrap_deg(target_global_pose["theta_z"] - present_pos["theta_z"]) * math.pi / 180.0,
+                    "theta_x": self.wrap_deg(target_global_pose["theta_x"] - present_pos["theta_x"]),
+                    "theta_y": self.wrap_deg(target_global_pose["theta_y"] - present_pos["theta_y"]),
+                    "theta_z": self.wrap_deg(target_global_pose["theta_z"] - present_pos["theta_z"]),
                 } # convert from degrees to twist's expected radians
+                
                 log(f"Error:\n{error}")
                 twist = twist_cmd.twist
-                twist.linear_x = error["x"] * self.gain_pos
-                twist.linear_y = error["y"] * self.gain_pos
-                twist.linear_z = error["z"] * self.gain_pos
-                twist.angular_x = error["theta_x"] * self.gain_rot
-                twist.angular_y = error["theta_y"] * self.gain_rot
-                twist.angular_z = error["theta_z"] * self.gain_rot
+                twist.linear_x = self.clamp_linear(error["x"] * self.gain_pos)
+                twist.linear_y = self.clamp_linear(error["y"] * self.gain_pos)
+                twist.linear_z = self.clamp_linear(error["z"] * self.gain_pos)
+                twist.angular_x = self.clamp_angular(error["theta_x"] * self.gain_rot)
+                twist.angular_y = self.clamp_angular(error["theta_y"] * self.gain_rot)
+                twist.angular_z = self.clamp_angular(error["theta_z"] * self.gain_rot)
+                log(f"Sending twist: {twist_cmd}")
                 self.base.SendTwistCommand(twist_cmd)
                 log(f"Twist sent: {twist_cmd}")
                 pos_norm = (error["x"]**2 + error["y"]**2 + error["z"]**2)**0.5
                 rot_norm = (error["theta_x"]**2 + error["theta_y"]**2 + error["theta_z"]**2)**0.5
                 log(f"Distance to goal: {pos_norm}, rotation to goal {rot_norm}")
-                if pos_norm < 0.002 and rot_norm < 0.01  * math.pi / 180.0:
+                if pos_norm < 0.01 and rot_norm < 0.1:
                     log("Reached goal - stopping")
                     self.base.Stop()
+                for i in range(0, 10):
+                    log(f"{self.get_present_pose()}")
+                    time.sleep(0.1)
+                self.base.Stop()
             except Exception as e:
                 log(f"{e}")
             self.time2newgoal = time.time()
@@ -289,6 +316,12 @@ class KinovaGen3EndEffector(Robot):
         except Exception as e:
             log(f"Error: {e}")
             raise Exception("Action writer thread failed!")
+        
+    def clamp_angular(self, vel):
+        return max(-self.angular_vel_lim, min(vel, self.angular_vel_lim))
+                   
+    def clamp_linear(self, vel):
+        return max(-self.vel_lim, min(vel, self.vel_lim))
 
     def send_action(self, action):
         if action["theta_y"] > 0.01:

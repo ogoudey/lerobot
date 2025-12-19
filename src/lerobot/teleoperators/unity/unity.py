@@ -140,8 +140,8 @@ def pose_listener(shared):
                     shared["y"] = transform_gripper["px"] - init_pose["x"]
                     shared["z"] = transform_gripper["py"] - init_pose["y"] - 0.2
 
-                    shared["theta_x"] = transform_gripper["rx"] % 360 - init_pose["theta_x"]
-                    shared["theta_y"] = transform_gripper["rz"] % 360 - init_pose["theta_z"]
+                    shared["theta_x"] = -(transform_gripper["rz"] % 360 - init_pose["theta_z"])
+                    shared["theta_y"] = transform_gripper["rx"] % 360 - init_pose["theta_x"]
                     shared["theta_z"] = -(transform_gripper["ry"] % 360 - init_pose["theta_y"])
                     
                     shared["gripper"] = transform_gripper["gripper"]
