@@ -26,6 +26,11 @@ from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
 
 from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2, Common_pb2
 
+# Good source:
+# https://github.com/vincekurtz/kinova_drake/blob/master/kinova_station/hardware_station.py#L670
+
+
+
 home_position = {'x': 0.5766636729240417, 'y': 0.0013102991, 'z': 0.4336315989494324, 'theta_x': 90.01219940185547, 'theta_y': 2.240478352177888e-05, 'theta_z': 89.99665069580078}
 
 # Unclassy log function
@@ -266,7 +271,8 @@ class KinovaGen3EndEffector(Robot):
             try:
                 twist_cmd = Base_pb2.TwistCommand()
                 twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
-                
+                twist_cmd.duration = 0 #Otherwise infinite? This would be crazy...
+
                 target_global_pose = {
                     "x": self.init_pos["x"] + goal["x"],
                     "y": self.init_pos["y"] + goal["y"],
