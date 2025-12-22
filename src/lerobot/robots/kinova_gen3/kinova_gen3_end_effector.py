@@ -103,7 +103,8 @@ class KinovaGen3EndEffector(Robot):
                 success = True
                 log(f"Moving to experiment position")
 
-                self.experiment_pose()
+                self.move_to_home_position()
+                #self.experiment_pose()
 
                 try:
                     log("ee_writer goal_position id: {id(self.goal_position)}")
@@ -113,7 +114,7 @@ class KinovaGen3EndEffector(Robot):
                     while True:
                         loop_start = time.perf_counter()                        
                         log(f"[ee_writer] goal position {self.goal_position}")
-                        success &= self.send_cartesian(self.goal_position)
+                        self.send_cartesian(self.goal_position)
                         dt_s = time.perf_counter() - loop_start
                         #busy_wait(1 / 30 - dt_s)
                 except KeyboardInterrupt:
@@ -272,7 +273,9 @@ class KinovaGen3EndEffector(Robot):
             log(f"Error (Euler):\n{error}")
 
             # --- Hypothesis 1: Twist coordinates = global Euler coordinates. Cannot come up with alternative.
+            
 
+            """
             self.apply_twist({
                 "linear_x": self.clamp_linear(error["x"] * self.gain_pos),
                 "linear_y": self.clamp_linear(error["y"] * self.gain_pos),
@@ -280,11 +283,60 @@ class KinovaGen3EndEffector(Robot):
                 "angular_x": self.clamp_angular(error["theta_x"] * self.gain_rot), # degrees, as expected
                 "angular_y": self.clamp_angular(error["theta_y"] * self.gain_rot), # degrees, as expected
                 "angular_z": self.clamp_angular(error["theta_z"] * self.gain_rot) # degrees, as expected
-            })          
+            })
+            """
+            # --- Hypothesis 2: Twist rotation coordinates are "additive"
+            twist_vel = self.compute_twist(present_pos, target_global_pose)
+            self.apply_twist(twist_vel)
+
+                     
         except Exception as e:
             log(f"Error: {e}")
             raise Exception("Action writer thread failed!")
     
+    def compute_twist(self, current_pose, target_pose, gain_pos=0.5, gain_rot=0.5):
+        """
+        Compute Twist command to move from current_pose to target_pose. IIIIFFF it needs computing...
+        
+        Args:
+            current_pose: dict with keys ["x","y","z","theta_x","theta_y","theta_z"] in meters and degrees
+            target_pose: dict with keys ["x","y","z","theta_x","theta_y","theta_z"] in meters and degrees
+            gain_pos: proportional gain for linear velocities
+            gain_rot: proportional gain for angular velocities
+            clamp_linear: function to clamp linear velocities (optional)
+            clamp_angular: function to clamp angular velocities (optional)
+            
+        Returns:
+            twist_vel: dict with keys ["linear_x","linear_y","linear_z","angular_x","angular_y","angular_z"]
+        """
+        # --- Linear error (still straightforward)
+        error_linear = np.array([
+            target_pose["x"] - current_pose["x"],
+            target_pose["y"] - current_pose["y"],
+            target_pose["z"] - current_pose["z"]
+        ])
+        
+        # --- Rotational error (convert Euler -> quaternion -> axis-angle)
+        current_rot = R.from_euler('xyz', [current_pose["theta_x"], current_pose["theta_y"], current_pose["theta_z"]], degrees=True)
+        target_rot  = R.from_euler('xyz', [target_pose["theta_x"], target_pose["theta_y"], target_pose["theta_z"]], degrees=True)
+        
+        error_rot = target_rot * current_rot.inv()   # rotation from current -> target
+        rotvec = error_rot.as_rotvec()               # axis-angle representation, magnitude in radians
+        
+        # Proportional control for angular velocity
+        angular_vel = np.degrees(rotvec) * gain_rot
+
+        twist_vel = {
+            "linear_x": self.clamp_linear(error_linear[0] * gain_pos),
+            "linear_y": self.clamp_linear(error_linear[1] * gain_pos),
+            "linear_z": self.clamp_linear(error_linear[2] * gain_pos),
+            "angular_x": self.clamp_angular(angular_vel[0]),
+            "angular_y": self.clamp_angular(angular_vel[1]),
+            "angular_z": self.clamp_angular(angular_vel[2])
+        }
+        
+        return twist_vel
+
     def apply_twist(self, velocities):
         twist_cmd = Base_pb2.TwistCommand()
         twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
@@ -296,7 +348,7 @@ class KinovaGen3EndEffector(Robot):
         twist.angular_y = velocities["angular_y"]
         twist.angular_z = velocities["angular_z"]
         self.base.SendTwistCommand(twist_cmd)
-        log(f"Twist sent (expected Euler): {twist_cmd}")
+        log(f"Twist sent:\n{twist_cmd}")
 
 
     def rotation_matrices(self, pose):
@@ -351,7 +403,6 @@ class KinovaGen3EndEffector(Robot):
         return r.as_matrix()
 
     def clamp_angular(self, vel):
-        return 0
         return max(-self.angular_vel_lim, min(vel, self.angular_vel_lim))
                    
     def clamp_linear(self, vel):
