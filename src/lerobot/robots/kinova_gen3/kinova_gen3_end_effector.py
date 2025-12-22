@@ -16,7 +16,7 @@ from lerobot.motors.feetech import FeetechMotorsBus
 from lerobot.utils.robot_utils import busy_wait
 import math
 from .config_kinova_gen3_end_effector import KinovaGen3EndEffectorConfig
-
+from scipy.spatial.transform import Rotation as R
 logger = logging.getLogger(__name__)
 
 from ..robot import Robot
@@ -81,6 +81,9 @@ class KinovaGen3EndEffector(Robot):
         self.vel_lim = 0.1
         self.angular_vel_lim = 5
 
+        self.feedback = None
+        self.last_feedback_refresh = 0
+
 
     def ee_writer(self):
         log("ee_writer self id: {id(self)}")
@@ -93,25 +96,20 @@ class KinovaGen3EndEffector(Robot):
         try:
             with utilities.DeviceConnection.createTcpConnection(args) as router:
 
-            # Create required services
+                # Create required services
                 self.base = BaseClient(router)
                 self.base_cyclic = BaseCyclicClient(router)
-                
-                # Example core
-                
-                
 
-               
                 success = True
-                log(f"Moving to home position")
-                success &= self.move_to_home_position()
+                log(f"Moving to experiment position")
 
-                #self.test_twists()
-                input("Continue?")
+                self.experiment_pose()
 
                 try:
                     log("ee_writer goal_position id: {id(self.goal_position)}")
                     log(f"Starting action writer loop")
+                    self.feedback = self.base_cyclic.RefreshFeedback()
+                    self.last_feedback_refresh = time.time()
                     while True:
                         loop_start = time.perf_counter()                        
                         log(f"[ee_writer] goal position {self.goal_position}")
@@ -126,6 +124,7 @@ class KinovaGen3EndEffector(Robot):
             return
         except Exception as e:
             log(f"Error {e}. could not initialize.")
+
     def connect(self, calibrate=False):
         pass
     
@@ -201,133 +200,174 @@ class KinovaGen3EndEffector(Robot):
     def is_connected(self) -> bool:
         return self.connected
 
-    def test_twists(self):
-        
-        input("thetay and -z")
-        twist_cmd = Base_pb2.TwistCommand()
-        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
-        twist = twist_cmd.twist
-        twist.linear_x = 0
-        twist.linear_y = 0
-        twist.linear_z = -0.1
-        twist.angular_x = 0
-        twist.angular_y = 45
-        twist.angular_z = 0
-        self.base.SendTwistCommand(twist_cmd)
-        time.sleep(1)
-        self.base.Stop()
-        input("thetax")
-        twist_cmd = Base_pb2.TwistCommand()
-        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
-        twist = twist_cmd.twist
-        twist.linear_x = 0
-        twist.linear_y = 0
-        twist.linear_z = 0
-        twist.angular_x = 45
-        twist.angular_y = 0
-        twist.angular_z = 0
-        self.base.SendTwistCommand(twist_cmd)
-        time.sleep(1)
-        self.base.Stop()
-        input("thetaz")
-        twist_cmd = Base_pb2.TwistCommand()
-        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
-        twist = twist_cmd.twist
-        twist.linear_x = 0
-        twist.linear_y = 0
-        twist.linear_z = 0
-        twist.angular_x = 0
-        twist.angular_y = 0
-        twist.angular_z = 45
-        self.base.SendTwistCommand(twist_cmd)
-        time.sleep(1)
-        self.base.Stop()
+    def go_to_cartesian_pose(self, pose):
+        action = Base_pb2.Action()
+
+        action.name = "Cartesian + gripper"
+
+        action.application_data = ""
+        cartesian_pose = action.reach_pose.target_pose
+
+        cartesian_pose.x = 0.5766636729240417
+        cartesian_pose.y = 0.0013102991
+        cartesian_pose.z = 0.436315989494324
+        cartesian_pose.theta_x = 90.0
+        cartesian_pose.theta_y = 0.0
+        cartesian_pose.theta_z = 0.0
+
+        e = threading.Event()
+        notification_handle = self.base.OnNotificationActionTopic(self.check_for_end_or_abort(e), Base_pb2.NotificationOptions())
+        self.base.ExecuteAction(action)
+        self.base.Unsubscribe(notification_handle)
+        finished = e.wait(TIMEOUT_DURATION)
+
+    def experiment_pose(self):
+        self.go_to_cartesian_pose({
+            "x": 0.57,
+            "y": 0.001,
+            "z": 90,
+            "y": 0,
+            "z": 0,
+        })
 
     def get_present_pose(self):
-        feedback = self.base_cyclic.RefreshFeedback()
+        if time.time() - self.last_feedback_refresh > 0.01:
+            self.feedback = self.base_cyclic.RefreshFeedback()
+            self.last_feedback_refresh = time.time()
+
         return {
-            "x": feedback.base.tool_pose_x,
-            "y": feedback.base.tool_pose_y,
-            "z": feedback.base.tool_pose_z,
-            "theta_x": feedback.base.tool_pose_theta_x,
-            "theta_y": feedback.base.tool_pose_theta_y,
-            "theta_z": feedback.base.tool_pose_theta_z,
+            "x": self.feedback.base.tool_pose_x,
+            "y": self.feedback.base.tool_pose_y,
+            "z": self.feedback.base.tool_pose_z,
+            "theta_x": self.feedback.base.tool_pose_theta_x,
+            "theta_y": self.feedback.base.tool_pose_theta_y,
+            "theta_z": self.feedback.base.tool_pose_theta_z,
         }
     
     def send_cartesian(self, goal_position):
         try:
-            if not goal_position == self.last_goal:
-                #log(f"T goal update: {time.time() - self.time2newgoal}")
-                self.last_goal = goal_position.copy()
-                
-            self.time2reachgoal = time.time()
+            goal = goal_position.copy()
+            log(f"[send_cartesian] anchored goal (Euler) {goal}")
+            target_global_pose = {
+                "x": self.init_pos["x"] + goal["x"],
+                "y": self.init_pos["y"] + goal["y"],
+                "z": self.init_pos["z"] + goal["z"],
+                "theta_x": self.init_pos["theta_x"] + goal["theta_x"],
+                "theta_y": self.init_pos["theta_y"] + goal["theta_y"],
+                "theta_z": self.init_pos["theta_z"] + goal["theta_z"]  
+            }
+            log(f"Target_global_pose (Euler):\n{target_global_pose}")
 
             present_pos = self.get_present_pose()
-            
-            goal = goal_position.copy()
-            log(f"[send_cartesian] goal position {goal}")
-            
-            #log("Starting Cartesian action movement ...")
-            try:
-                twist_cmd = Base_pb2.TwistCommand()
-                twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
-                twist_cmd.duration = 0 #Otherwise infinite? This would be crazy...
+            log(f"Present pose (Euler):\n{present_pos}")
 
-                target_global_pose = {
-                    "x": self.init_pos["x"] + goal["x"],
-                    "y": self.init_pos["y"] + goal["y"],
-                    "z": self.init_pos["z"] + goal["z"],
-                    "theta_x": self.init_pos["theta_x"] + goal["theta_x"],
-                    "theta_y": self.init_pos["theta_y"] + goal["theta_y"],
-                    "theta_z": self.init_pos["theta_z"] + goal["theta_z"]  
-                }
-                log(f"Target_global_pose:\n{target_global_pose}")
-                
-                log(f"Present pose:\n{present_pos}")
-                error = {
-                    "x": target_global_pose["x"] - present_pos["x"],
-                    "y": target_global_pose["y"] - present_pos["y"],
-                    "z": target_global_pose["z"] - present_pos["z"],
-                    "theta_x": self.wrap_deg(target_global_pose["theta_x"] - present_pos["theta_x"]),
-                    "theta_y": self.wrap_deg(target_global_pose["theta_y"] - present_pos["theta_y"]),
-                    "theta_z": self.wrap_deg(target_global_pose["theta_z"] - present_pos["theta_z"]),
-                } # convert from degrees to twist's expected radians
-                
-                log(f"Error:\n{error}")
-                twist = twist_cmd.twist
-                twist.linear_x = self.clamp_linear(error["x"] * self.gain_pos)
-                twist.linear_y = self.clamp_linear(error["y"] * self.gain_pos)
-                twist.linear_z = self.clamp_linear(error["z"] * self.gain_pos)
-                twist.angular_x = self.clamp_angular(error["theta_x"] * self.gain_rot)
-                twist.angular_y = self.clamp_angular(error["theta_y"] * self.gain_rot)
-                twist.angular_z = self.clamp_angular(error["theta_z"] * self.gain_rot)
-                log(f"Sending twist: {twist_cmd}")
-                self.base.SendTwistCommand(twist_cmd)
-                log(f"Twist sent: {twist_cmd}")
-                pos_norm = (error["x"]**2 + error["y"]**2 + error["z"]**2)**0.5
-                rot_norm = (error["theta_x"]**2 + error["theta_y"]**2 + error["theta_z"]**2)**0.5
-                log(f"Distance to goal: {pos_norm}, rotation to goal {rot_norm}")
-                if pos_norm < 0.01 and rot_norm < 0.1:
-                    log("Reached goal - stopping")
-                    self.base.Stop()
-                for i in range(0, 10):
-                    log(f"{self.get_present_pose()}")
-                    time.sleep(0.1)
-                self.base.Stop()
-            except Exception as e:
-                log(f"{e}")
-            self.time2newgoal = time.time()
-            dt_s = time.perf_counter() - self.time2reachgoal
-            return True
+            error = {
+                "x": target_global_pose["x"] - present_pos["x"],
+                "y": target_global_pose["y"] - present_pos["y"],
+                "z": target_global_pose["z"] - present_pos["z"],
+                "theta_x": target_global_pose["theta_x"] - present_pos["theta_x"],
+                "theta_y": target_global_pose["theta_y"] - present_pos["theta_y"],
+                "theta_z": target_global_pose["theta_z"] - present_pos["theta_z"]
+            }
+            log(f"Error (Euler):\n{error}")
+
+            # --- Hypothesis 1: Twist coordinates = global Euler coordinates. Cannot come up with alternative.
+
+            self.apply_twist({
+                "linear_x": self.clamp_linear(error["x"] * self.gain_pos),
+                "linear_y": self.clamp_linear(error["y"] * self.gain_pos),
+                "linear_z": self.clamp_linear(error["z"] * self.gain_pos),
+                "angular_x": self.clamp_angular(error["theta_x"] * self.gain_rot), # degrees, as expected
+                "angular_y": self.clamp_angular(error["theta_y"] * self.gain_rot), # degrees, as expected
+                "angular_z": self.clamp_angular(error["theta_z"] * self.gain_rot) # degrees, as expected
+            })          
         except Exception as e:
             log(f"Error: {e}")
             raise Exception("Action writer thread failed!")
+    
+    def apply_twist(self, velocities):
+        twist_cmd = Base_pb2.TwistCommand()
+        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+        twist = twist_cmd.twist
+        twist.linear_x = velocities["linear_x"]
+        twist.linear_y = velocities["linear_y"]
+        twist.linear_z = velocities["linear_z"]
+        twist.angular_x = velocities["angular_x"]
+        twist.angular_y = velocities["angular_y"]
+        twist.angular_z = velocities["angular_z"]
+        self.base.SendTwistCommand(twist_cmd)
+        log(f"Twist sent (expected Euler): {twist_cmd}")
+
+
+    def rotation_matrices(self, pose):
+        return self.euler_xyz_deg_to_rotmat(
+            pose["theta_x"],
+            pose["theta_y"],
+            pose["theta_z"]
+        )
+
         
+
+    def rotation_distance(self, R_curr, R_goal):
+        R_err = R_goal @ R_curr.T
+        return np.arccos(
+            np.clip((np.trace(R_err) - 1) / 2, -1.0, 1.0)
+        )
+
+    def calculate_angular_twist(self, R_c, R_g):
+        # --- Rotation matrices ---
+        log(f"Present rotation:\n{R_c}")
+        log(f"Goal rotation:\n{R_g}")
+        # --- Rotation error in base frame ---
+        R_err = R_g @ R_c.T
+
+        # --- Axis–angle ---
+        trace = np.trace(R_err)
+        angle = np.arccos(np.clip((trace - 1) / 2, -1.0, 1.0))
+
+        if angle < 1e-6:
+            omega = np.zeros(3)
+        else:
+            axis = np.array([
+                R_err[2,1] - R_err[1,2],
+                R_err[0,2] - R_err[2,0],
+                R_err[1,0] - R_err[0,1],
+            ]) / (2 * np.sin(angle))
+
+            omega = self.gain_rot * axis * angle
+
+        # --- Clamp ---
+        norm = np.linalg.norm(omega)
+        if norm > self.angular_vel_lim:
+            omega *= self.angular_vel_lim / norm
+
+        omega_deg = np.rad2deg(omega)
+        return omega_deg
+
+
+    def euler_xyz_deg_to_rotmat(self, theta_x, theta_y, theta_z):
+    # Extrinsic XYZ
+        r = R.from_euler('xyz', [theta_x, theta_y, theta_z], degrees=True)
+        return r.as_matrix()
+
     def clamp_angular(self, vel):
+        return 0
         return max(-self.angular_vel_lim, min(vel, self.angular_vel_lim))
                    
     def clamp_linear(self, vel):
         return max(-self.vel_lim, min(vel, self.vel_lim))
+
+    def send_0_twist(self):
+        twist_cmd = Base_pb2.TwistCommand()
+        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+        twist = twist_cmd.twist
+        twist.linear_x = 0
+        twist.linear_y = 0
+        twist.linear_z = 0
+        twist.angular_x = 0
+        twist.angular_y = 0
+        twist.angular_z = 0
+        self.base.SendTwistCommand(twist_cmd)
 
     def send_action(self, action):
         if action["theta_y"] > 0.01:
