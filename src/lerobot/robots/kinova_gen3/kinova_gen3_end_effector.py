@@ -74,12 +74,9 @@ class KinovaGen3EndEffector(Robot):
         self.last_goal = {}
         self.time2newgoal = 0
         self.time2reachgoal = 0
-        
-        self.gain_pos = 0.2
-        self.gain_rot = 0.5
 
-        self.vel_lim = 0.1
-        self.angular_vel_lim = 5
+        self.vel_lim = 0.15
+        self.angular_vel_lim = 10
 
         self.feedback = None
         self.last_feedback_refresh = 0
@@ -280,7 +277,7 @@ class KinovaGen3EndEffector(Robot):
             }
             log(f"Error (Euler):\n{error}")
 
-            current_gripper = self.get_gripper_value()
+            
             """
             # --- Hypothesis 1: Twist coordinates = global Euler coordinates. Cannot come up with alternative.
             self.apply_twist({
@@ -297,6 +294,7 @@ class KinovaGen3EndEffector(Robot):
             self.apply_twist(twist_vel)
             """
             # --- Hypothesis 1: Send gripper as error
+            current_gripper = self.get_gripper_value()
             gripper_vel = self.compute_gripper(target_global_pose["gripper"], current_gripper)
             self.send_gripper_command(gripper_vel) # outdated func call
             """
@@ -322,7 +320,7 @@ class KinovaGen3EndEffector(Robot):
         log(f"[gripper] target {target_gripper} - {current_gripper} => {return_}")
         return return_
 
-    def compute_twist(self, current_pose, target_pose, gain_pos=0.5, gain_rot=0.5):
+    def compute_twist(self, current_pose, target_pose, gain_pos=0.8, gain_rot=0.8):
         """
         Compute Twist command to move from current_pose to target_pose. IIIIFFF it needs computing...
         
@@ -331,8 +329,6 @@ class KinovaGen3EndEffector(Robot):
             target_pose: dict with keys ["x","y","z","theta_x","theta_y","theta_z"] in meters and degrees
             gain_pos: proportional gain for linear velocities
             gain_rot: proportional gain for angular velocities
-            clamp_linear: function to clamp linear velocities (optional)
-            clamp_angular: function to clamp angular velocities (optional)
             
         Returns:
             twist_vel: dict with keys ["linear_x","linear_y","linear_z","angular_x","angular_y","angular_z"]

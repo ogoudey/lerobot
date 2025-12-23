@@ -112,6 +112,7 @@ def pose_listener(shared):
         print("Connected:", addr)
         # 'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
         init_pose = None
+        pause = False
         with conn:
             while True:
                 data = conn.recv(1024)
@@ -124,7 +125,13 @@ def pose_listener(shared):
                     continue
                 #print(f"Updating local data: {transform}")
                 #print(f"{heard_poses} poses heard; input: {transform_gripper}")
-
+                if pause:
+                    if "message" in transform_gripper:
+                        print(f"Got '{transform_gripper['message']}'")
+                        if transform_gripper['message'] == "unpause":
+                            pause = False
+                            init_pose = None # This is actually a way to recalibrate.
+                    continue
                 
                 try:
                     if not init_pose:
@@ -136,9 +143,9 @@ def pose_listener(shared):
                             "theta_y": transform_gripper["ry"] % 360,
                             "theta_z": transform_gripper["rz"] % 360
                         }
-                    shared["x"] = -(transform_gripper["pz"] - init_pose["z"])
-                    shared["y"] = transform_gripper["px"] - init_pose["x"]
-                    shared["z"] = transform_gripper["py"] - init_pose["y"] - 0.2
+                    shared["x"] = transform_gripper["pz"] - init_pose["z"]
+                    shared["y"] = -(transform_gripper["px"] - init_pose["x"])
+                    shared["z"] = transform_gripper["py"] - init_pose["y"]
 
                     shared["theta_x"] = transform_gripper["rx"] % 360 - init_pose["theta_x"]
                     shared["theta_y"] = transform_gripper["rz"] % 360 - init_pose["theta_z"]
@@ -151,6 +158,10 @@ def pose_listener(shared):
                         #print(f"[pose_listener] {shared}")
                         pass
                 except KeyError as e:
+                    if "message" in transform_gripper:
+                        print(f"Got '{transform_gripper['message']}'")
+                        if transform_gripper['message'] == "pause":
+                            pause = True
                     print(f"{transform_gripper} is not the expected transform format... ({e})")
                 except Exception as e:
                     print(f"Error: {e}")
