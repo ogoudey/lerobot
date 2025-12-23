@@ -62,7 +62,7 @@ class KinovaGen3EndEffector(Robot):
 
     def __init__(self, config: KinovaGen3EndEffectorConfig):
         super().__init__(config)
-        self.goal_position = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'theta_x': 0.0, 'theta_y': 0.0, 'theta_z': 0.0}
+        self.goal_position = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'theta_x': 0.0, 'theta_y': 0.0, 'theta_z': 0.0, "gripper": 0.0}
 
         self.init_pos = home_position
         self.goal_lock = threading.Lock()
@@ -245,6 +245,13 @@ class KinovaGen3EndEffector(Robot):
             "theta_z": self.feedback.base.tool_pose_theta_z,
         }
     
+    def get_gripper_value(self):
+        # Position is 0 full open, 1 fully closed
+        gripper_request = Base_pb2.GripperRequest()
+        gripper_request.mode = Base_pb2.GRIPPER_POSITION
+        gripper_measure = self.base.GetMeasuredGripperMovement(gripper_request)
+        return gripper_measure.finger[0].value
+    
     def send_cartesian(self, goal_position):
         try:
             goal = goal_position.copy()
@@ -255,7 +262,8 @@ class KinovaGen3EndEffector(Robot):
                 "z": self.init_pos["z"] + goal["z"],
                 "theta_x": self.init_pos["theta_x"] + goal["theta_x"],
                 "theta_y": self.init_pos["theta_y"] + goal["theta_y"],
-                "theta_z": self.init_pos["theta_z"] + goal["theta_z"]  
+                "theta_z": self.init_pos["theta_z"] + goal["theta_z"],
+                "gripper": goal["gripper"]
             }
             log(f"Target_global_pose (Euler):\n{target_global_pose}")
 
@@ -268,14 +276,13 @@ class KinovaGen3EndEffector(Robot):
                 "z": target_global_pose["z"] - present_pos["z"],
                 "theta_x": target_global_pose["theta_x"] - present_pos["theta_x"],
                 "theta_y": target_global_pose["theta_y"] - present_pos["theta_y"],
-                "theta_z": target_global_pose["theta_z"] - present_pos["theta_z"]
+                "theta_z": target_global_pose["theta_z"] - present_pos["theta_z"],
             }
             log(f"Error (Euler):\n{error}")
 
-            # --- Hypothesis 1: Twist coordinates = global Euler coordinates. Cannot come up with alternative.
-            
-
+            current_gripper = self.get_gripper_value()
             """
+            # --- Hypothesis 1: Twist coordinates = global Euler coordinates. Cannot come up with alternative.
             self.apply_twist({
                 "linear_x": self.clamp_linear(error["x"] * self.gain_pos),
                 "linear_y": self.clamp_linear(error["y"] * self.gain_pos),
@@ -288,12 +295,33 @@ class KinovaGen3EndEffector(Robot):
             # --- Hypothesis 2: Twist rotation coordinates are "additive"
             twist_vel = self.compute_twist(present_pos, target_global_pose)
             self.apply_twist(twist_vel)
+            """
+            # --- Hypothesis 1: Send gripper as error
+            gripper_vel = self.compute_gripper(target_global_pose["gripper"], current_gripper)
+            self.send_gripper_command(gripper_vel) # outdated func call
+            """
 
+            # --- Hypothesis 2: Just set position
+            self.send_gripper_command(target_global_pose["gripper"])
+
+
+                
                      
         except Exception as e:
             log(f"Error: {e}")
             raise Exception("Action writer thread failed!")
-    
+        
+    def compute_gripper(self, target_gripper, current_gripper, deadband=0.1):
+        error = target_gripper - current_gripper
+        if abs(error) < deadband:
+            return_ = 0.0
+        elif error > 0:
+            return_ = -1.0
+        else:
+            return_ = 1.0
+        log(f"[gripper] target {target_gripper} - {current_gripper} => {return_}")
+        return return_
+
     def compute_twist(self, current_pose, target_pose, gain_pos=0.5, gain_rot=0.5):
         """
         Compute Twist command to move from current_pose to target_pose. IIIIFFF it needs computing...
@@ -358,6 +386,19 @@ class KinovaGen3EndEffector(Robot):
             pose["theta_z"]
         )
 
+    def send_gripper_command(self, value):
+        """
+        Send a position or a velocity command to the gripper
+        """
+
+        cmd = Base_pb2.GripperCommand()
+        cmd.mode = Base_pb2.GRIPPER_POSITION
+
+        finger = cmd.gripper.finger.add()
+        finger.finger_identifier = 0
+        finger.value = value
+
+        self.base.SendGripperCommand(cmd)
         
 
     def rotation_distance(self, R_curr, R_goal):
@@ -452,41 +493,6 @@ class KinovaGen3EndEffector(Robot):
             or notification.action_event == Base_pb2.ACTION_ABORT:
                 e.set()
         return check
-
-    def send_gripper_command(self, value: float):
-        """
-            value: float from 0 to 1 corresponding to the trigger value on the VR controller
-        """
-        target_position = value * 100
-        self.base_command = BaseCyclic_pb2.Command()
-        self.base_command.frame_id = 0
-        self.base_command.interconnect.command_id.identifier = 0
-        self.base_command.interconnect.gripper_command.command_id.identifier = 0
-
-        while True:
-            try:
-                base_feedback = self.base_cyclic.Refresh(self.base_command)
-
-                # Calculate speed according to position error (target position VS current position)
-                position_error = target_position - base_feedback.interconnect.gripper_feedback.motor[0].position
-
-                # If positional error is small, stop gripper
-                if abs(position_error) < 1.5:
-                    position_error = 0
-                    self.motorcmd.velocity = 0
-                    self.base_cyclic.Refresh(self.base_command)
-                    return True
-                else:
-                    self.motorcmd.velocity = 2.0 * abs(position_error) # "proportional gain" is hard-coded
-                    if self.motorcmd.velocity > 100.0:
-                        self.motorcmd.velocity = 100.0
-                    self.motorcmd.position = target_position
-
-            except Exception as e:
-                log("Error in refresh: " + str(e))
-                return False
-            time.sleep(0.001)
-        return True
 
     def move_to_home_position(self):
         # Make sure the arm is in Single Level Servoing mode
