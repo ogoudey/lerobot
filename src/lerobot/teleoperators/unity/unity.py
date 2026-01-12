@@ -99,8 +99,12 @@ def termux_listener(shared):
         except KeyError:
             print(f"{msg} is not the expected transform format...")
 
-# Unity pose listener. Now with gripper too.
-def pose_listener(shared):
+# Unity pose and signal listener. Now with gripper too.
+
+def unity_listener(shared, signal):
+    """
+    signal: {"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
+    """
     heard_poses = 0
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
@@ -125,12 +129,24 @@ def pose_listener(shared):
                     continue
                 #print(f"Updating local data: {transform}")
                 #print(f"{heard_poses} poses heard; input: {transform_gripper}")
+                if "message" in transform_gripper:
+                    print(f"Got '{transform_gripper['message']}'")
+                    if transform_gripper['message'] == "unpause":
+                        pause = False
+                        init_pose = None # This is actually a way to recalibrate.
+                    if transform_gripper['message'] == "stop":
+                        if signal["RUNNING_E"]:
+                            signal["RUNNING_E"] = False
+                            time.sleep(0.5) # So you don't by mistake exit the dataset recording.
+                        else:
+                            signal["RUNNING_LOOP"] = False
+                    elif transform_gripper['message'] == "go":
+                        if not signal["RUNNING_E"]:
+                            signal["RUNNING_E"] = True
+                        else:
+                            print(f"Passing. Already going.")
+                                
                 if pause:
-                    if "message" in transform_gripper:
-                        print(f"Got '{transform_gripper['message']}'")
-                        if transform_gripper['message'] == "unpause":
-                            pause = False
-                            init_pose = None # This is actually a way to recalibrate.
                     continue
                 
                 try:
@@ -179,7 +195,7 @@ class UnityEndEffectorTeleop(Teleoperator):
         self.display_data = False
         self.teleop_time_s = 400
         self.event_queue = Queue()
-        self.current_pressed = {}
+
         self.listener = None
         self.logs = {}
 
@@ -226,9 +242,12 @@ class UnityEndEffectorTeleop(Teleoperator):
             assert kinematics_joint_order == self.joint_names
             assert self.kinematics.joint_names == self.joint_names
         
-        #self.t = threading.Thread(target=pose_listener, args=[self.target_pos])
-        self.transform = threading.Thread(target=pose_listener, args=[self.target_pos])
+        self.signal = {"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
+        self.listener = threading.Thread(target=unity_listener, args=[self.target_pos, self.signal])
         
+
+        
+
         self.socket = s.socket(socket.AF_INET, socket.SOCK_STREAM)        
 
     def project(self, raw_frame):
@@ -274,7 +293,7 @@ class UnityEndEffectorTeleop(Teleoperator):
     def connect(self, calibrate=False) -> None:
         # Open socket to Unity
         print("Connecting...")
-        self.transform.start()
+        self.listener.start()
         self.connected = True
         while not "x" in self.target_pos: # until the x target moves from its initial pose (the teleop data is doing something...)
             if random.random() < 0.1:
