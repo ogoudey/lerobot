@@ -167,18 +167,15 @@ def no_robot_loop(teleop, fps, duration, reader_assignments={}):
 
 
 def unrecorded_teleop_loop_no_ik(
-    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None , reader_assignments={}
+    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None, reader_assignments, signal: dict[str, Any]
 ):
-
-
-
     #robot.configure()
     """ Calculate FK once for initial position """
     observation = robot.get_observation() # set robot.present_pos
     
     start = time.perf_counter()
     print("Unrecorded Teleop loop starting...")
-    while True:
+    while signal["RUNNING_E"]:
         try:
             loop_start = time.perf_counter()
             action = teleop.get_action()
@@ -206,14 +203,13 @@ def unrecorded_teleop_loop_no_ik(
                 return
         except Exception as e:
             print(f"Error: {e} in unrecorded teleop loop no ik")
+    print("Out of episode loop!")
     
 
 
 def unrecorded_teleop_loop(
-    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, verbose=False, 
+    teleop: Teleoperator, robot: Robot, fps: int, display_data: bool = False, duration: float | None = None, verbose=False, signal: dict[str, Any]={"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
 ):
-    if not robot.bus.is_connected:
-        robot.bus.connect()
 
     display_len = max(len(key) for key in robot.action_features)
 
@@ -240,7 +236,7 @@ def unrecorded_teleop_loop(
                 
     start = time.perf_counter()
     print("UnrecordedTeleop loop starting...")
-    while True:
+    while signal["RUNNING_E"]:
         loop_start = time.perf_counter()
         joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])
         action = teleop.get_action()

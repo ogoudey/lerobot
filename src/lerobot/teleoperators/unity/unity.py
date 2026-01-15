@@ -103,7 +103,7 @@ def termux_listener(shared):
 
 def unity_listener(shared, signal):
     """
-    signal: {"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
+    signal: {"RUNNING_LOOP": True, "RUNNING_E": False, "task": ""}
     """
     heard_poses = 0
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -116,7 +116,6 @@ def unity_listener(shared, signal):
         print("Connected:", addr)
         # 'gripper': 0.0, 'delta_x': 0.06789376088414159, 'delta_y': -0.060046243950372995, 'delta_z': -0.02887945867382694, 'theta_x': 0.0007037802541721705, 'theta_y': -0.0007037802541721705, 'theta_z': 0.0}
         init_pose = None
-        pause = False
         with conn:
             while True:
                 data = conn.recv(1024)
@@ -125,30 +124,26 @@ def unity_listener(shared, signal):
                 try:
                     transform_gripper = json.loads(data.decode().strip())
                 except Exception as e:
-                    print(f"BAd data: {e}. (Continuing)")
+                    print(f"BAd data: {data.decode().strip()}. {e}. (Continuing)")
                     continue
                 #print(f"Updating local data: {transform}")
                 #print(f"{heard_poses} poses heard; input: {transform_gripper}")
                 if "message" in transform_gripper:
                     print(f"Got '{transform_gripper['message']}'")
-                    if transform_gripper['message'] == "unpause":
-                        pause = False
-                        init_pose = None # This is actually a way to recalibrate.
                     if transform_gripper['message'] == "stop":
+                        print("Receiving stop!")
                         if signal["RUNNING_E"]:
                             signal["RUNNING_E"] = False
                             time.sleep(0.5) # So you don't by mistake exit the dataset recording.
                         else:
                             signal["RUNNING_LOOP"] = False
                     elif transform_gripper['message'] == "go":
+                        print("Receiving go!")
                         if not signal["RUNNING_E"]:
                             signal["RUNNING_E"] = True
                         else:
                             print(f"Passing. Already going.")
-                                
-                if pause:
-                    continue
-                
+                    print(f"Signal: {signal}")            
                 try:
                     if not init_pose:
                         init_pose = {
@@ -170,15 +165,11 @@ def unity_listener(shared, signal):
                     shared["gripper"] = transform_gripper["gripper"]
 
 
-                    if shared["theta_y"] > 0.01:
-                        #print(f"[pose_listener] {shared}")
+                    if transform_gripper["gripper"] > 0:
+                        #print(f"{transform_gripper['gripper']} greater than zero!")
                         pass
                 except KeyError as e:
-                    if "message" in transform_gripper:
-                        print(f"Got '{transform_gripper['message']}'")
-                        if transform_gripper['message'] == "pause":
-                            pause = True
-                    print(f"{transform_gripper} is not the expected transform format... ({e})")
+                    print(f"{transform_gripper} is not a transform... ({e})")
                 except Exception as e:
                     print(f"Error: {e}")
                 heard_poses += 1          
@@ -196,9 +187,8 @@ class UnityEndEffectorTeleop(Teleoperator):
         self.teleop_time_s = 400
         self.event_queue = Queue()
 
-        self.listener = None
         self.logs = {}
-
+        
         if hasattr(config, "unity_projector"):
             self.unity_projector = config.unity_projector
         
@@ -242,8 +232,7 @@ class UnityEndEffectorTeleop(Teleoperator):
             assert kinematics_joint_order == self.joint_names
             assert self.kinematics.joint_names == self.joint_names
         
-        self.signal = {"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
-        self.listener = threading.Thread(target=unity_listener, args=[self.target_pos, self.signal])
+        #self.signal = dict()
         
 
         
@@ -290,10 +279,10 @@ class UnityEndEffectorTeleop(Teleoperator):
             "names": {},
         }
 
-    def connect(self, calibrate=False) -> None:
+    def connect(self, signal, calibrate=False) -> None:
         # Open socket to Unity
         print("Connecting...")
-        self.listener.start()
+        threading.Thread(target=unity_listener, args=[self.target_pos, signal]).start()
         self.connected = True
         while not "x" in self.target_pos: # until the x target moves from its initial pose (the teleop data is doing something...)
             if random.random() < 0.1:
@@ -313,10 +302,6 @@ class UnityEndEffectorTeleop(Teleoperator):
         return self.connected
 
     def get_action(self) -> dict[str, Any]:
-        
-        if random.random() < 0.005:
-            print(f"Target pos: {self.target_pos}")
-
         if not self.is_connected:
             raise DeviceNotConnectedError(
                 "Unity is not connected. You need to run `connect()` before `get_action()`."

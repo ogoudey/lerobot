@@ -80,7 +80,7 @@ class KinovaGen3EndEffector(Robot):
 
         self.feedback = None
         self.last_feedback_refresh = 0
-
+        self.fire_low_level = False
 
     def ee_writer(self):
         log("ee_writer self id: {id(self)}")
@@ -96,33 +96,37 @@ class KinovaGen3EndEffector(Robot):
                 # Create required services
                 self.base = BaseClient(router)
                 self.base_cyclic = BaseCyclicClient(router)
-
-                success = True
-                log(f"Moving to experiment position")
-
-                self.move_to_home_position()
-                #self.experiment_pose()
-
-                try:
-                    log("ee_writer goal_position id: {id(self.goal_position)}")
-                    log(f"Starting action writer loop")
-                    self.feedback = self.base_cyclic.RefreshFeedback()
-                    self.last_feedback_refresh = time.time()
-                    while True:
+                log("ee_writer goal_position id: {id(self.goal_position)}")
+                log(f"Starting action writer loop")
+                self.feedback = self.base_cyclic.RefreshFeedback()
+                self.last_feedback_refresh = time.time()
+                while True:
+                    while self.fire_low_level:
                         loop_start = time.perf_counter()                        
                         log(f"[ee_writer] goal position {self.goal_position}")
                         self.send_cartesian(self.goal_position)
                         dt_s = time.perf_counter() - loop_start
                         #busy_wait(1 / 30 - dt_s)
-                except KeyboardInterrupt:
-                    log(f"Exiting action thread")
-                    self.running = False
-                    raise KeyboardInterrupt("Exited")
+                    time.sleep(0.1)
+
         except KeyboardInterrupt:
             return
         except Exception as e:
             log(f"Error {e}. could not initialize.")
 
+    def home(self):
+        self.fire_low_level = False
+        time.sleep(0.1) # wait for last twist to finish (otherwise the next line will silently fail)
+        self.move_to_home_position()
+        self.goal_position["x"] = 0.0
+        self.goal_position["y"] = 0.0
+        self.goal_position["z"] = 0.0
+        self.goal_position["theta_x"] = 0.0
+        self.goal_position["theta_y"] = 0.0
+        self.goal_position["theta_z"] = 0.0
+        self.goal_position["gripper"] = 0.0
+        self.fire_low_level = True
+        
     def connect(self, calibrate=False):
         pass
     
@@ -139,7 +143,9 @@ class KinovaGen3EndEffector(Robot):
         pass
 
     def configure(self):
-        
+        pass
+
+    def start_low_level(self):
         self.t.start()
         self.running = True
         pass
@@ -199,6 +205,7 @@ class KinovaGen3EndEffector(Robot):
         return self.connected
 
     def go_to_cartesian_pose(self, pose):
+        print("EXPERIMENTAL going to pose...")
         action = Base_pb2.Action()
 
         action.name = "Cartesian + gripper"
@@ -216,8 +223,9 @@ class KinovaGen3EndEffector(Robot):
         e = threading.Event()
         notification_handle = self.base.OnNotificationActionTopic(self.check_for_end_or_abort(e), Base_pb2.NotificationOptions())
         self.base.ExecuteAction(action)
-        self.base.Unsubscribe(notification_handle)
+        
         finished = e.wait(TIMEOUT_DURATION)
+        self.base.Unsubscribe(notification_handle)
 
     def experiment_pose(self):
         self.go_to_cartesian_pose({
@@ -374,7 +382,6 @@ class KinovaGen3EndEffector(Robot):
         self.base.SendTwistCommand(twist_cmd)
         log(f"Twist sent:\n{twist_cmd}")
 
-
     def rotation_matrices(self, pose):
         return self.euler_xyz_deg_to_rotmat(
             pose["theta_x"],
@@ -396,7 +403,6 @@ class KinovaGen3EndEffector(Robot):
 
         self.base.SendGripperCommand(cmd)
         
-
     def rotation_distance(self, R_curr, R_goal):
         R_err = R_goal @ R_curr.T
         return np.arccos(
@@ -433,7 +439,6 @@ class KinovaGen3EndEffector(Robot):
         omega_deg = np.rad2deg(omega)
         return omega_deg
 
-
     def euler_xyz_deg_to_rotmat(self, theta_x, theta_y, theta_z):
     # Extrinsic XYZ
         r = R.from_euler('xyz', [theta_x, theta_y, theta_z], degrees=True)
@@ -445,17 +450,6 @@ class KinovaGen3EndEffector(Robot):
     def clamp_linear(self, vel):
         return max(-self.vel_lim, min(vel, self.vel_lim))
 
-    def send_0_twist(self):
-        twist_cmd = Base_pb2.TwistCommand()
-        twist_cmd.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
-        twist = twist_cmd.twist
-        twist.linear_x = 0
-        twist.linear_y = 0
-        twist.linear_z = 0
-        twist.angular_x = 0
-        twist.angular_y = 0
-        twist.angular_z = 0
-        self.base.SendTwistCommand(twist_cmd)
 
     def send_action(self, action):
         if action["theta_y"] > 0.01:
@@ -489,7 +483,24 @@ class KinovaGen3EndEffector(Robot):
             or notification.action_event == Base_pb2.ACTION_ABORT:
                 e.set()
         return check
+    def test(self):
+        self.base.Stop()
+        time.sleep(0.2)
 
+        servo = Base_pb2.ServoingModeInformation()
+        servo.servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
+        self.base.SetServoingMode(servo)
+        time.sleep(0.1)
+
+        twist = Base_pb2.TwistCommand()
+        twist.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+        twist.twist.linear_z = 0.05
+
+        for _ in range(200):
+            self.base.SendTwistCommand(twist)
+            time.sleep(0.01)
+
+        self.base.Stop()
     def move_to_home_position(self):
         # Make sure the arm is in Single Level Servoing mode
         base_servo_mode = Base_pb2.ServoingModeInformation()
@@ -497,7 +508,7 @@ class KinovaGen3EndEffector(Robot):
         self.base.SetServoingMode(base_servo_mode)
         
         # Move arm to ready position
-        log("Moving the arm to a safe position")
+        print("Moving the arm to a safe position")
         action_type = Base_pb2.RequestedActionType()
         action_type.action_type = Base_pb2.REACH_JOINT_ANGLES
         action_list = self.base.ReadAllActions(action_type)
@@ -507,7 +518,7 @@ class KinovaGen3EndEffector(Robot):
                 action_handle = action.handle
 
         if action_handle == None:
-            log("Can't reach safe position. Exiting")
+            print("Can't reach safe position. Exiting")
             return False
 
         e = threading.Event()
@@ -521,8 +532,10 @@ class KinovaGen3EndEffector(Robot):
         self.base.Unsubscribe(notification_handle)
 
         if finished:
-            log("Safe position reached")
+            print("Safe position reached")
         else:
-            log("Timeout on action notification wait")
+            print("Failed? Going to experiment pose...")
+            self.experiment_pose()
+            print("Timeout on action notification wait")
         return finished
     
