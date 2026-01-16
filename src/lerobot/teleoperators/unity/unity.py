@@ -124,7 +124,6 @@ def unity_listener(shared, signal):
                 try:
                     transform_gripper = json.loads(data.decode().strip())
                 except Exception as e:
-                    print(f"BAd data: {data.decode().strip()}. {e}. (Continuing)")
                     continue
                 #print(f"Updating local data: {transform}")
                 #print(f"{heard_poses} poses heard; input: {transform_gripper}")

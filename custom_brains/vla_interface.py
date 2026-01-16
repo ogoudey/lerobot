@@ -301,7 +301,7 @@ class VLAInitializationError(Exception):
 # ============ Runners ============ #
 
 class DatasetRecorder:
-    """"""
+    """u"""
     def __init__(self, robot, teleop_config, dataset_name, reader_assignments):
         self.robot = robot
         self.teleop_config = teleop_config
@@ -321,9 +321,9 @@ class DatasetRecorder:
         dataset_features = get_dataset_features(self.robot, cameras)
         dataset = create_dataset(self.robot, self.teleop_config, dataset_features, self.dataset_name)
         teleop = make_teleoperator_from_config(self.teleop_config)
-        teleop.connect()
+        teleop.connect(signal)
         print(f"Outside running loop.")
-        self.robot.configure() # starts thread to actuators  
+        self.robot.start_low_level() # starts thread to actuators  
         with VideoEncodingManager(dataset):      
             while signal["RUNNING_LOOP"]:
                 print(f"Reset posistion?")
@@ -336,17 +336,9 @@ class DatasetRecorder:
                 while not signal["RUNNING_E"]:
                     time.sleep(0.1)
                 if with_ik:
-                    unrecorded_teleop_loop(teleop, self.robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.teleop_time_s, verbose=False) # send IPwebcam to teleop loop 
+                    teleop_loop(teleop, self.robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.duration, self.reader_assignments, dataset, signal) # send IPwebcam to teleop loop 
                 else:
-                    unrecorded_teleop_loop_no_ik(teleop, self.robot, 30, 400, self.reader_assignments, signal) # send IPwebcam to teleop loop   
-
-
-            
-
-
-        print(f"Runner done.")
-
-
+                    teleop_loop_no_ik(teleop, self.robot, 30, 400, self.reader_assignments, dataset, signal) # send IPwebcam to teleop loop   
 
 class RawTeleopRunner:
     def __init__(self, robot, teleop_config, reader_assignments):
@@ -512,7 +504,7 @@ def create_teleop_recorded_interaction(dataset_name: str | None = None):
 
 def create_teleop_recording_kinova_interaction(reader_assignments: dict | None = None, dataset_name: str | None = None):
     robot, robot_config = create_body()
-    robot.configure()
+    robot.start_low_level()
     human_policy: TeleoperateConfig = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
     if reader_assignments is None:
         from camera_readers import WebcamReader, USBCameraReader
@@ -526,9 +518,9 @@ def create_teleop_recording_kinova_interaction(reader_assignments: dict | None =
 
 def get_kinova_setup_cameras():
     ob = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
-    side = USBCameraReader.get_cap(6)
+    front = USBCameraReader.get_cap(6)
     ra = {
-        "side": USBCameraReader(side),
+        "front": USBCameraReader(front),
         "onboard": WebcamReader(ob),
     }
     return ra

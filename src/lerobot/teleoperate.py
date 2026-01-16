@@ -317,7 +317,7 @@ def teleop_loop(
             
     start = time.perf_counter()
     print("Teleop loop starting...")
-    while signal["EPISODE_RUNNING"]:
+    while signal["RUNNING_E"]:
         loop_start = time.perf_counter()
         
         observation = robot.get_observation()
@@ -378,15 +378,15 @@ def teleop_loop(
             return
 
 def teleop_loop_no_ik(
-    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, task=None, verbose=False, signal: dict[str, Any]={"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
+    teleop: Teleoperator, robot: Robot, fps: int, duration: float | None = None, reader_assignments: dict[str, Any] = dict(), dataset=None, signal: dict[str, Any]={"RUNNING_LOOP": True, "RUNNING_E": True, "task": ""}
 ):       
     robot.configure()     
     start = time.perf_counter()
     print("The no-IK loop is starting...")
-    while signal["EPISODE_RUNNING"]:
+    while signal["RUNNING_E"]:
         loop_start = time.perf_counter()
         
-        observation = robot.get_observation()
+        state = robot.get_joints_array()
         action = teleop.get_action()
             
         #print(f"Sending {action}")
@@ -394,7 +394,7 @@ def teleop_loop_no_ik(
         
         if dataset is not None:
             frame = {
-                "observation.state": np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)   # robot state
+                "observation.state": np.array(state, dtype=np.float32)   # robot state
             }
             for angle, reader in reader_assignments.items():
                 frame[f"observation.images.{angle}"] = reader.frame.copy()
@@ -408,7 +408,7 @@ def teleop_loop_no_ik(
             frame["action"] = np.array(list(action.values()), dtype=np.float32)
             dataset.add_frame(
                 frame,
-                task=task,        # or whatever
+                task=signal["task"],        # or whatever
             )
         
         dt_s = time.perf_counter() - loop_start

@@ -115,6 +115,7 @@ class KinovaGen3EndEffector(Robot):
             log(f"Error {e}. could not initialize.")
 
     def home(self):
+        """Returns arm to home position, and (after) opens the low level control lock."""
         self.fire_low_level = False
         time.sleep(0.1) # wait for last twist to finish (otherwise the next line will silently fail)
         self.move_to_home_position()
@@ -149,7 +150,7 @@ class KinovaGen3EndEffector(Robot):
         self.t.start()
         self.running = True
         pass
-
+    
     @property
     def _motors_ft(self) -> dict[str, type]:
         return {
@@ -171,27 +172,21 @@ class KinovaGen3EndEffector(Robot):
         } # change to onboard camera width?
         
 
+
     @property
     def observation_features(self) -> dict[str, type | tuple]:
         return {**self._motors_ft, **self._cameras_ft}
 
     def get_observation(self):
-        # Read arm position
-        """
-        start = time.perf_counter()
-        obs_dict = self.bus.sync_read("Present_Position")
-        obs_dict = {f"{motor}.pos": val for motor, val in obs_dict.items()}
-        dt_ms = (time.perf_counter() - start) * 1e3
-        logger.debug(f"{self} read state: {dt_ms:.1f}ms")
-
-        # Capture images from cameras
-        for cam_key, cam in self.cameras.items():
-            start = time.perf_counter()
-            obs_dict[cam_key] = cam.async_read()
-            dt_ms = (time.perf_counter() - start) * 1e3
-            logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
-        """
         return dict()
+
+    def get_joints_array(self):
+        # Read arm position
+        joints_arr = []
+        for a in self.feedback.actuators:
+            position = a.position
+            joints_arr.append(position)
+        return np.array(joints_arr)
 
     @property
     def is_calibrated(self):
