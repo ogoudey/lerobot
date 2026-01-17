@@ -236,8 +236,25 @@ class UnityEndEffectorTeleop(Teleoperator):
 
         
 
-        self.socket = s.socket(socket.AF_INET, socket.SOCK_STREAM)        
+        self.socket = s.socket(socket.AF_INET, socket.SOCK_STREAM)    
+        self.msg_socket = s.socket(socket.AF_INET, socket.SOCK_STREAM)     
+    
+    def send_message(self, msg):
+        print(f"(Sending) {msg}")
+        try:
+            if not isinstance(msg, str):
+                raise TypeError("msg must be a string")
 
+            data_bytes = msg.encode("utf-8")
+            length = len(data_bytes)
+
+            self.msg_socket.sendall(length.to_bytes(4, "big") + data_bytes)
+            return True
+
+        except Exception as e:
+            print(f"{e}\n Failed to send message to Unity.")
+            return False
+    
     def project(self, raw_frame):
         # --- Convert frame to PNG bytes ---
         try:
@@ -289,7 +306,8 @@ class UnityEndEffectorTeleop(Teleoperator):
             time.sleep(0.1)
         print(f"Connected to teleop data")
         try:
-            self.socket.connect(("192.168.0.209", 5000)) # VR computer 
+            self.socket.connect(("192.168.0.209", 5000)) # VR computer
+            self.msg_socket.connect(("192.168.0.209", 5004))
             print(f"Successfully connected to Unity VR")
         except Exception as e:
             print(f"Streaming Connection Error: {e}")
