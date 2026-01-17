@@ -133,7 +133,7 @@ def create_dataset(robot, teleop_config, dataset_features, dataset_name):
     return LeRobotDataset.create(
         repo_id="olingoudey/" + dataset_name,
         fps=teleop_config.fps,
-        root=Path('./data/' + dataset_name + str(random.randint(0, 1000))), # random numbers for safety
+        root=Path('./data/' + dataset_name + str(random.randint(0, 1000))), # random numbers so no datais overridden
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
@@ -322,23 +322,55 @@ class DatasetRecorder:
         dataset = create_dataset(self.robot, self.teleop_config, dataset_features, self.dataset_name)
         teleop = make_teleoperator_from_config(self.teleop_config)
         teleop.connect(signal)
-        print(f"Outside running loop.")
-        self.robot.start_low_level() # starts thread to actuators  
-        with VideoEncodingManager(dataset):      
+        print(f"Outside recorded running loop.")
+        self.robot.start_low_level() # starts thread to actuators
+        # 0. Initial reset position choice  
+        teleop.send_message(f"Reset posistion?")
+        while not signal["RUNNING_E"]:
+            time.sleep(0.1)
+        teleop.send_message(f"Resetting position.")
+        self.robot.home()
+        signal["RUNNING_E"] = False
+        teleop.send_message(f"Position reset. Resetting signal...")
+        with VideoEncodingManager(dataset):   
+            teleop.send_message(f"Inside videoencoder...")   
             while signal["RUNNING_LOOP"]:
-                print(f"Reset posistion?")
-                while not signal["RUNNING_E"]:
+		        # 1. Start recording choice
+		        teleop.send_message(f"Start episode/Quit?")
+		        signal["RUNNING_E"] = None
+                while signal["RUNNING_E"] is None:
                     time.sleep(0.1)
-                print(f"Resetting position.")
-                self.robot.home()
-                signal["RUNNING_E"] = False
-                print(f"Position reset. Resetting signal...")
-                while not signal["RUNNING_E"]:
-                    time.sleep(0.1)
+                if not signal["RUNNING_E"]:
+                    teleop.send_message(f"Quitting!")
+                    break # The best place to quit I think
+                else:
+                    teleop.send_message(f"Go!")
                 if with_ik:
                     teleop_loop(teleop, self.robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.duration, self.reader_assignments, dataset, signal) # send IPwebcam to teleop loop 
                 else:
-                    teleop_loop_no_ik(teleop, self.robot, 30, 400, self.reader_assignments, dataset, signal) # send IPwebcam to teleop loop   
+                    teleop_loop_no_ik(teleop, self.robot, 30, 400, self.reader_assignments, dataset, signal) # send IPwebcam to teleop loop
+                # 1. Save/Delete recording choice
+                teleop.send_message(f"Save episode?")
+                time.sleep(0.1)
+                signal["RUNNING_E"] = None
+                while signal["RUNNING_E"] is None:
+                    time.sleep(0.1) 
+                if signal["RUNNING_E"]:
+                    dataset.save_episode()
+                else:
+                    teleop.send_message(f"Not saving")
+                signal["RUNNING_E"] = False
+                # 3. Reset position choice 
+                teleop.send_message(f"Reset posistion?")
+                while not signal["RUNNING_E"]:
+                    time.sleep(0.1)
+                teleop.send_message(f"Resetting position.")
+                self.robot.home()
+                signal["RUNNING_E"] = False
+                teleop.send_message(f"Position reset. Resetting signal...")
+                
+                
+        teleop.send_message(f"After VideoEncoder")
 
 class RawTeleopRunner:
     def __init__(self, robot, teleop_config, reader_assignments):
@@ -502,23 +534,9 @@ def create_teleop_recorded_interaction(dataset_name: str | None = None):
         dataset_name = "test_record-11-24"
     return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
 
-def create_teleop_recording_kinova_interaction(reader_assignments: dict | None = None, dataset_name: str | None = None):
-    robot, robot_config = create_body()
-    robot.start_low_level()
-    human_policy: TeleoperateConfig = create_teleop(robot_config, UnityEndEffectorTeleopConfig)
-    if reader_assignments is None:
-        from camera_readers import WebcamReader, USBCameraReader
-        reader_assignments = {
-            "front": USBCameraReader(USBCameraReader.get_cap(6)),
-            "onboard": WebcamReader(WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color"))
-        }
-    if dataset_name is None:
-        dataset_name = "demo-12-5"
-    return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
-
 def get_kinova_setup_cameras():
     ob = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
-    front = USBCameraReader.get_cap(6)
+    front = USBCameraReader.get_cap(4)
     ra = {
         "front": USBCameraReader(front),
         "onboard": WebcamReader(ob),
