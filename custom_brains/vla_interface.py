@@ -223,27 +223,31 @@ def create_body(subclass:Robot):
     return robot, robot_config
 
 def create_teleop(robot_config: SO101FollowerConfig, cls: UnityEndEffectorTeleopConfig | KeyboardEndEffectorTeleopConfig):
-    if cls is UnityEndEffectorTeleopConfig:
-        return UnityEndEffectorTeleopConfig(
-            fps=30,
-            teleop_time_s=180.0,
-            display_data=False,
-        )
-    elif cls is KeyboardEndEffectorTeleopConfig:
-        return KeyboardEndEffectorTeleopConfig(
-            robot = robot_config,
-            teleop = KeyboardEndEffectorTeleopConfig(
-                id="teleop1",
-                calibration_dir=Path("."),
-                mock=False,
-            ),
-            fps=30,
-            teleop_time_s=180.0,
-            display_data=False,
-            
-        )
-    else:
-        raise Exception(f"Please provide a known Teleop class, not {cls}")
+    """
+    TeleopConfig class -> created Teleop config instance (this is really a class method?)
+    """
+    match cls:
+        case UnityEndEffectorTeleopConfig: # might not work...
+            return UnityEndEffectorTeleopConfig(
+                fps=30,
+                teleop_time_s=180.0,
+                display_data=False,
+            )
+        case KeyboardEndEffectorTeleopConfig:
+            return KeyboardEndEffectorTeleopConfig(
+                robot = robot_config,
+                teleop = KeyboardEndEffectorTeleopConfig(
+                    id="teleop1",
+                    calibration_dir=Path("."),
+                    mock=False,
+                ),
+                fps=30,
+                teleop_time_s=180.0,
+                display_data=False,
+                
+            )
+        case _:
+            raise Exception(f"Please provide a known Teleop class, not {cls}")
 
 
 # ======================================= #
