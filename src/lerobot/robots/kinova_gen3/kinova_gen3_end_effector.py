@@ -114,7 +114,7 @@ class KinovaGen3EndEffector(Robot):
         except Exception as e:
             log(f"Error {e}. could not initialize.")
 
-    def home(self):
+    def reset_position(self):
         """Returns arm to home position, and (after) opens the low level control lock."""
         self.fire_low_level = False
         time.sleep(0.1) # wait for last twist to finish (otherwise the next line will silently fail)

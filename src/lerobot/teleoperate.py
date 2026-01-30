@@ -169,7 +169,6 @@ def no_robot_loop(teleop, fps, duration, reader_assignments={}):
 def unrecorded_teleop_loop_no_ik(
     teleop: Teleoperator, robot: Robot, fps: int, duration: float | None, reader_assignments, signal: dict[str, Any]
 ):
-    #robot.configure()
     """ Calculate FK once for initial position """
     observation = robot.get_observation() # set robot.present_pos
     

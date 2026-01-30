@@ -18,7 +18,7 @@ import logging
 import time
 from functools import cached_property
 from typing import Any
-
+import numpy as np
 from lerobot.cameras.utils import make_cameras_from_configs
 from lerobot.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
@@ -201,13 +201,6 @@ class SO101Follower(Robot):
         obs_dict = {f"{motor}.pos": val for motor, val in obs_dict.items()}
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read state: {dt_ms:.1f}ms")
-
-        # Capture images from cameras (unused)
-        for cam_key, cam in self.cameras.items():
-            start = time.perf_counter()
-            obs_dict[cam_key] = cam.async_read()
-            dt_ms = (time.perf_counter() - start) * 1e3
-            logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
         return obs_dict
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
@@ -264,7 +257,12 @@ class SO101Follower(Robot):
             cam.disconnect()
 
         logger.info(f"{self} disconnected.")
-        
+
+    def get_joints_array(self):
+        self.get_observation()
+        return np.array(list(self.present_pos.values()))
+        return np.array([self.present_pos[name] for name in teleop.joint_names])
+
     def reset_position(self,
         position=None,
         threshold=0.1,   # max allowed difference per joint
