@@ -133,7 +133,7 @@ def create_dataset(robot, teleop_config, dataset_features, dataset_name):
     return LeRobotDataset.create(
         repo_id="olingoudey/" + dataset_name,
         fps=teleop_config.fps,
-        root=Path('./data/' + dataset_name + str(random.randint(0, 1000))), # random numbers for safety
+        root=Path('./data/' + dataset_name + str(random.randint(0, 1000))), # random numbers so no datais overridden
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
@@ -241,9 +241,9 @@ class Runner:
         self.calculate_ik = True
         self.dataset_making = False
         self.ask_catch_on_end = True
+        self.ask_to_save_episode = True
         self.camera_assignments = None
         self.project_camera = False # changed to a str later??!
-
         self.policy = None
         self.device = None
 
@@ -263,24 +263,33 @@ class Runner:
         if hasattr(self.robot, "start_low_level"): # workaround
             self.robot.start_low_level() # starts thread to actuators  
 
+
+        if self.reset_position_on_begin:
+            if self.ask_to_reset:
+                print(f"Reset position?") # Add display_text...
+                while not signal["RUNNING_E"]:
+                    time.sleep(0.1)
+            print(f"Resetting position.")
+            self.robot.reset_position()
+            print(f"Position reset. Resetting signal...")
         ctx = VideoEncodingManager(dataset) if self.dataset_making else nullcontext() # For cleanliness...
         with ctx:
             while signal["RUNNING_LOOP"]:
-                if self.reset_position_on_begin:
-                    if self.ask_to_reset:
-                        print(f"Reset position?") # Add display_text...
-                        while not signal["RUNNING_E"]:
-                            time.sleep(0.1)
-                    print(f"Resetting position.")
-                    self.robot.reset_position() # Abstraction for robots, should maybe take an arg, or actually be another VLA
                 if self.ask_to_loop:
                     signal["RUNNING_E"] = False
-                    print(f"Position reset. Resetting signal...")
+                    teleop.send_message(f"Start episode/Quit?")
                     while not signal["RUNNING_E"]:
                         time.sleep(0.1)
+                    if not signal["RUNNING_E"]:
+                        teleop.send_message(f"Quitting!")
+                        break
+                    else:
+                        teleop.send_message(f"Go!")
 
-                initial_joints_deg = np.array(self.robot.get_joints_array())    # convert to np_array for kinematics
+                
+
                 if self.calculate_ik:
+                    initial_joints_deg = np.array(self.robot.get_joints_array())    # convert to np_array for kinematics
                     position_weight, orientation_weight = 1.0, 0.1    
                     calculated_ee_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
                     init_fk = calculated_ee_pos[:3, 3]
@@ -340,6 +349,30 @@ class Runner:
                         )
                     dt_s = time.perf_counter() - loop_start
                     busy_wait(1 / 30 - dt_s) # fps is hard-coded    
+                if self.dataset_making:
+                    if self.ask_to_save_episode:
+                        teleop.send_message(f"Save episode?")
+                        time.sleep(0.1)
+                        signal["RUNNING_E"] = None
+                        while signal["RUNNING_E"] is None:
+                            time.sleep(0.1)
+                        if signal["RUNNING_E"]:
+                            dataset.save_episode()
+                        else:
+                            teleop.send_message(f"Not saving")
+                    else:
+                        dataset.save_episode()
+                else:
+                    teleop.send_message(f"Not saving")
+                if self.reset_position_on_begin:
+                    if self.ask_to_reset:
+                        
+                        while not signal["RUNNING_E"]:
+                            time.sleep(0.1)
+                    # [TODO] Fix this - align it with pulled DatasetRecorder.
+                    print(f"Resetting position.")
+                    self.robot.reset_position() # Abstraction for robots, should maybe take an arg, or actually be another VLA
+
             for camera in list(self.camera_assignments.values()):
                 camera.stop()
             if self.ask_catch_on_end:
@@ -439,16 +472,85 @@ def teleop_loop(
 
     display_len = max(len(key) for key in robot.action_features)
 
-    
-    position_weight, orientation_weight = 1.0, 0.1
-    
-    """ Calculate FK once for initial position """
-    observation = robot.get_observation() # set robot.present_pos
-    initial_joints_deg = np.array([robot.present_pos[name] for name in teleop.joint_names])    # convert to np_array for kinematics
-    
-    # Check kinematics
-    kinematics_joint_order = list(teleop.kinematics.robot.model.names)[2:]
-    assert kinematics_joint_order == teleop.joint_names
+# ============ Runners ============ #
+
+class DatasetRecorder:
+    """u"""
+    def __init__(self, robot, teleop_config, dataset_name, reader_assignments):
+        self.robot = robot
+        self.teleop_config = teleop_config
+        self.reader_assignments = reader_assignments
+        self.dataset_name = dataset_name
+
+    def run(self, signal):
+        if type(self.robot) == KinovaGen3EndEffector:
+            print(f"Robot {self.robot} is a KinovaGen3EndEffector, not using IK")
+            with_ik = False
+        else:
+            print(f"Robot is {self.robot} and uses IK.")
+            with_ik = True
+
+        cameras = list(self.reader_assignments.values())
+        start_cameras(cameras)
+        dataset_features = get_dataset_features(self.robot, cameras)
+        dataset = create_dataset(self.robot, self.teleop_config, dataset_features, self.dataset_name)
+        teleop = make_teleoperator_from_config(self.teleop_config)
+        teleop.connect(signal)
+        print(f"Outside recorded running loop.")
+        self.robot.start_low_level() # starts thread to actuators
+        # 0. Initial reset position choice  
+        teleop.send_message(f"Reset posistion?")
+        while not signal["RUNNING_E"]:
+            time.sleep(0.1)
+        teleop.send_message(f"Resetting position.")
+        self.robot.home()
+        signal["RUNNING_E"] = False
+        teleop.send_message(f"Position reset. Resetting signal...")
+        with VideoEncodingManager(dataset):   
+            teleop.send_message(f"Inside videoencoder...")   
+            while signal["RUNNING_LOOP"]:
+		        # 1. Start recording choice
+		        teleop.send_message(f"Start episode/Quit?")
+		        signal["RUNNING_E"] = None
+                while signal["RUNNING_E"] is None:
+                    time.sleep(0.1)
+                if not signal["RUNNING_E"]:
+                    teleop.send_message(f"Quitting!")
+                    break # The best place to quit I think
+                else:
+                    teleop.send_message(f"Go!")
+                if with_ik:
+                    teleop_loop(teleop, self.robot, self.teleop_config.fps, self.teleop_config.display_data, self.teleop_config.duration, self.reader_assignments, dataset, signal) # send IPwebcam to teleop loop 
+                else:
+                    teleop_loop_no_ik(teleop, self.robot, 30, 400, self.reader_assignments, dataset, signal) # send IPwebcam to teleop loop
+                # 1. Save/Delete recording choice
+                teleop.send_message(f"Save episode?")
+                time.sleep(0.1)
+                signal["RUNNING_E"] = None
+                while signal["RUNNING_E"] is None:
+                    time.sleep(0.1) 
+                if signal["RUNNING_E"]:
+                    dataset.save_episode()
+                else:
+                    teleop.send_message(f"Not saving")
+                signal["RUNNING_E"] = False
+                # 3. Reset position choice 
+                teleop.send_message(f"Reset posistion?")
+                while not signal["RUNNING_E"]:
+                    time.sleep(0.1)
+                teleop.send_message(f"Resetting position.")
+                self.robot.home()
+                signal["RUNNING_E"] = False
+                teleop.send_message(f"Position reset. Resetting signal...")
+                
+                
+        teleop.send_message(f"After VideoEncoder")
+
+class RawTeleopRunner:
+    def __init__(self, robot, teleop_config, reader_assignments):
+        self.teleop_config = teleop_config
+        self.reader_assignments = reader_assignments
+        self.robot = robot
         
     calculated_ee_pos = teleop.kinematics.forward_kinematics(initial_joints_deg)
     
@@ -607,6 +709,7 @@ def create_teleop_recorded_interaction(dataset_name: str | None = None):
         dataset_name = "test_record-11-24"
     return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
 
+<<<<<<< HEAD
 def create_so101_teleop_recording_interaction(dataset_name: str | None = None):
     robot, robot_cfg = create_body(SO101Follower)
     reader_assignments = get_so101_setup_cameras()
@@ -637,9 +740,11 @@ def create_teleop_recording_kinova_interaction(reader_assignments: dict | None =
         dataset_name = "demo-12-5"
     return DatasetRecorder(robot, human_policy, dataset_name, reader_assignments)
 
+=======
+>>>>>>> d2cec59932a9e92585d752d0308e7c797bc72731
 def get_kinova_setup_cameras():
     ob = WebcamReader.get_cap("rtsp://admin:admin@192.168.1.10/color")
-    front = USBCameraReader.get_cap(6)
+    front = USBCameraReader.get_cap(4)
     ra = {
         "front": USBCameraReader(front),
         "onboard": WebcamReader(ob),

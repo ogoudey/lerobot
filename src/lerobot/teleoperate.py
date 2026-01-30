@@ -403,8 +403,9 @@ def teleop_loop_no_ik(
                 else:
                     #print(f"Not sending projection")
                     pass
-            print(f"Action frame: {list(action.values())}")
+            
             frame["action"] = np.array(list(action.values()), dtype=np.float32)
+            #print(f"Frame: {frame}")
             dataset.add_frame(
                 frame,
                 task=signal["task"],        # or whatever
@@ -414,6 +415,7 @@ def teleop_loop_no_ik(
         busy_wait(1 / fps - dt_s)
 
         loop_s = time.perf_counter() - loop_start
+    print("The no-IK loop is exiting...")
 
 
 
