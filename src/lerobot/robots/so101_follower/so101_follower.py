@@ -61,7 +61,7 @@ class SO101Follower(Robot):
         )
         self.cameras = make_cameras_from_configs(config.cameras)
         
-        self.external_cameras = []
+        self.external_cameras = {}
         
         self.present_pos = None
         
@@ -76,17 +76,18 @@ class SO101Follower(Robot):
             cam: (self.config.cameras[cam].height, self.config.cameras[cam].width, 3) for cam in self.cameras
         }
 
+    def set_external_cameras(self, camera_assignments):
+        self.external_cameras = camera_assignments
+    
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
-        if len(self.external_cameras) == 2: # front and side
-            print("Adding external cameras to frame format")
-            return {
-                **self._motors_ft,
-                "side": self.external_cameras[0],
-                "up": self.external_cameras[1],
-            }
-        else: # preexisting in repo
-            return {**self._motors_ft, **self._cameras_ft}
+        print("Adding external cameras to frame format")
+        features = {
+            **self._motors_ft,
+        }
+        for angle, camera in self.external_cameras.items():
+            features[angle] = camera.frame.shape
+        return features
         
 
     @cached_property
@@ -102,23 +103,26 @@ class SO101Follower(Robot):
         We assume that at connection time, arm is in a rest position,
         and torque can be safely disabled to run calibration.
         """
+        print("SO101 Connecting")
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
-
+        print("Connecting bus")
         self.bus.connect()
+        print("Bus connected")
         if self.is_calibrated:
-            logger.info("Yes is calibrated.")
+            print("Yes is calibrated.")
         if not self.is_calibrated and calibrate:
-            logger.info(
+            print(
                 "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
             )
             self.calibrate()
 
         for cam in self.cameras.values():
             cam.connect()
+        print("Configuring...")
 
         self.configure()
-        logger.info(f"{self} connected.")
+        print(f"{self} connected.")
 
     @property
     def is_calibrated(self) -> bool:
@@ -195,8 +199,6 @@ class SO101Follower(Robot):
         print("\n")
         """
 
-
-        
         self.present_pos = obs_dict
         obs_dict = {f"{motor}.pos": val for motor, val in obs_dict.items()}
         dt_ms = (time.perf_counter() - start) * 1e3
@@ -255,7 +257,7 @@ class SO101Follower(Robot):
         self.bus.disconnect(self.config.disable_torque_on_disconnect)
         for cam in self.cameras.values():
             cam.disconnect()
-
+        self._is_connected = False
         logger.info(f"{self} disconnected.")
 
     def get_joints_array(self):
@@ -268,6 +270,7 @@ class SO101Follower(Robot):
         threshold=0.1,   # max allowed difference per joint
         max_wait_s=2.0,   # safety timeout
     ):
+        print(f"(in Robot) Resetting position")
         if position is None:
             position = {
                 "shoulder_pan.pos": 0.0,
@@ -277,7 +280,8 @@ class SO101Follower(Robot):
                 "wrist_roll.pos": 0.0,
                 "gripper.pos": 0.0,
             }
-
+        self.present_pos = self.bus.sync_read("Present_Position")
+        print(f"{self.present_pos}")
         start_time = time.perf_counter()
         try:
             while True:
@@ -298,21 +302,27 @@ class SO101Follower(Robot):
                 self.send_action(position)
                 if max_diff < threshold:
                     print("Max difference in joints:", max_diff)
-                    break  # done, robot is close enough
+                    return  # done, robot is close enough
                 
                 # Safety timeout
                 if time.perf_counter() - start_time > max_wait_s:
                     #print(f"Warning: reset_position timed out (max_diff={max_diff:.4f})")
                     print("Max difference in joints:", max_diff)
-                    break
+                    return
                 
                 
                 dt_s = time.perf_counter() - loop_start
                 busy_wait(1 / 15 - dt_s)
+            
+        except Exception as e:
+            print(f"Error durring reset position {e}")
         finally:
+            print(f"Disconnecting robot...")
             self.bus.disconnect(disable_torque=False)
             try:
+                print(f"Reconnecting...")
                 self.bus.connect()
+                print(f"Reconnected.")
             except RuntimeError as e:
                 print(e)
                 print("Trying to recover. Catch me (1 second).")

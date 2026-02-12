@@ -1,7 +1,15 @@
-import cv2
 from threading import Thread
 import time
 import os
+import ctypes
+def suppress_stderr():
+    libc = ctypes.CDLL(None)
+    stderr = ctypes.c_void_p.in_dll(libc, "stderr")
+    libc.freopen(os.devnull.encode(), b"w", stderr)
+
+suppress_stderr()
+import cv2
+
 import sys
 
 class WebcamReader(Thread):

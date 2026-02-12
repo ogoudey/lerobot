@@ -27,7 +27,7 @@ from enum import Enum
 from functools import cached_property
 from pprint import pformat
 from typing import Protocol, TypeAlias
-
+from deepdiff import DeepDiff
 import serial
 from tqdm import tqdm
 
@@ -265,7 +265,7 @@ class MotorsBus(abc.ABC):
         motors: dict[str, Motor],
         calibration: dict[str, MotorCalibration] | None = None,
     ):
-        from deepdiff import DeepDiff
+        
 
 
         self.port = port
@@ -434,7 +434,7 @@ class MotorsBus(abc.ABC):
             raise DeviceAlreadyConnectedError(
                 f"{self.__class__.__name__}('{self.port}') is already connected. Do not call `{self.__class__.__name__}.connect()` twice."
             )
-
+        #print(f"MotorsBus connecting")
         self._connect(handshake)
         self.set_timeout()
         logger.debug(f"{self.__class__.__name__} connected.")
@@ -1075,18 +1075,22 @@ class MotorsBus(abc.ABC):
             raise DeviceNotConnectedError(
                 f"{self.__class__.__name__}('{self.port}') is not connected. You need to run `{self.__class__.__name__}.connect()`."
             )
-
         self._assert_protocol_is_compatible("sync_read")
+        #print("Sync read 'compatible'")
 
         names = self._get_motors_list(motors)
         ids = [self.motors[motor].id for motor in names]
+        
         models = [self.motors[motor].model for motor in names]
-
+        #print(f"{ids}; {models}")
         if self._has_different_ctrl_tables:
+            #print(f"self._has_different_ctrl_tables: {self._has_different_ctrl_tables}")
             assert_same_address(self.model_ctrl_table, models, data_name)
-
+        #print("getting next(iter(models))")
         model = next(iter(models))
+        #print("getting addresS")
         addr, length = get_address(self.model_ctrl_table, model, data_name)
+        #print("Mid sync read")
 
         err_msg = f"Failed to sync read '{data_name}' on {ids=} after {num_retry + 1} tries."
         ids_values, _ = self._sync_read(
@@ -1097,7 +1101,6 @@ class MotorsBus(abc.ABC):
 
         if normalize and data_name in self.normalized_data:
             ids_values = self._normalize(ids_values)
-
         return {self._id_to_name(id_): value for id_, value in ids_values.items()}
 
     def _sync_read(
@@ -1115,10 +1118,7 @@ class MotorsBus(abc.ABC):
             comm = self.sync_reader.txRxPacket()
             if self._is_comm_success(comm):
                 break
-            logger.debug(
-                f"Failed to sync read @{addr=} ({length=}) on {motor_ids=} ({n_try=}): "
-                + self.packet_handler.getTxRxResult(comm)
-            )
+            print(f"Failed to sync read @{addr=} ({length=}) on {motor_ids=} ({n_try=}): {self.packet_handler.getTxRxResult(comm)}")
 
         if not self._is_comm_success(comm) and raise_on_error:
             raise ConnectionError(f"{err_msg} {self.packet_handler.getTxRxResult(comm)}")

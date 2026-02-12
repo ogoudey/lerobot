@@ -18,15 +18,18 @@ import logging
 import os
 import sys
 import time
-from queue import Queue
+import threading
+from queue import Queue, Empty
 from typing import Any
-
+from pathlib import Path
 from lerobot.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
-
+import numpy as np
 from ..teleoperator import Teleoperator
 from .configuration_keyboard import KeyboardEndEffectorTeleopConfig, KeyboardTeleopConfig, KeyboardJointTeleopConfig
+import socket
 
-PYNPUT_AVAILABLE = True
+AS_TELEOP_SERVER = True
+PYNPUT_AVAILABLE = False
 try:
     if ("DISPLAY" not in os.environ) and ("linux" in sys.platform):
         logging.info("No DISPLAY set. Skipping pynput import.")
@@ -59,9 +62,7 @@ class KeyboardTeleop(Teleoperator):
         self.current_pressed = {}
         self.listener = None
         self.logs = {}
-        
-        self.urdf_path = os.path.abspath("custom_brains/so101_new_calib.urdf")
-        #self.urdf_path = os.path.abspath("custom_brains/so101_old_calib.urdf")
+        self.urdf_path = Path("/home/olin/Robotics/Projects/LeRobot/lerobot/custom_brains/so101_new_calib.urdf").as_posix() # change
         
         max_joint_names = [
             "shoulder_pan",
@@ -87,9 +88,14 @@ class KeyboardTeleop(Teleoperator):
         # Checking order of joints so solver is aligned #
         kinematics_joint_order = list(self.kinematics.robot.model.names)[2:]
         assert kinematics_joint_order == self.joint_names
-        assert self.kinematics.joint_names == self.joint_names
-    
+        assert self.kinematics.joint_names == self.joint_names    
+
+        self.signal = {} # gets from vla_complex
         
+        self.teleop_port = 5008
+        self.listening = False
+        self.send_q = Queue()
+        self._is_connected = False
     @property
     def action_features(self) -> dict:
         return {
@@ -104,19 +110,107 @@ class KeyboardTeleop(Teleoperator):
 
     @property
     def is_connected(self) -> bool:
+        return self._is_connected
         return PYNPUT_AVAILABLE and isinstance(self.listener, keyboard.Listener) and self.listener.is_alive()
 
     @property
     def is_calibrated(self) -> bool:
         pass
 
-    def connect(self) -> None:
+    def run_server(self):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", self.teleop_port))
+        server.listen()
+        self.listening = True
+        print("Teleop server waiting...")
+        while self.listening:
+            client_sock, addr = server.accept()
+            print(f"Teleop client connected on {addr}")
+            threading.Thread(
+                target=self.handle_client,
+                args=(client_sock,),
+                daemon=True
+            ).start()
+
+    def handle_client(self, sock):
+        stop_event = threading.Event()
+        threading.Thread(
+            target=self.recv_loop,
+            args=(sock, stop_event),
+            daemon=True
+        ).start()
+        threading.Thread(
+            target=self.send_loop,
+            args=(sock, self.send_q, stop_event),
+            daemon=True
+        ).start()
+    
+    def send_loop(self, sock: socket.socket, send_q: Queue, stop_event):
+        print("Send loop started")
+        try:
+            while not stop_event.is_set():
+                msg = send_q.get()
+                sock.sendall((msg + "\n").encode())
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            stop_event.set()
+            print("send_loop exiting")
+
+    def recv_loop(self, sock: socket.socket, stop_event):
+        print("Recv loop started")
+        try:
+            while not stop_event.is_set():
+                
+                key, is_pressed = self.recv_code(sock)
+                if is_pressed:
+                    if key == 'y':
+                        self.signal["DECISION"] = "y"
+                        print(self.signal)
+                    elif key == 'n':
+                        self.signal["DECISION"] = "n"
+
+                self.event_queue.put((key, is_pressed))
+        except (ConnectionResetError, OSError) as err:
+            print(err)
+        finally:
+            stop_event.set()
+            print("Disconnected recv_loop")
+    
+    def recv_code(self, sock: socket.socket) -> tuple:
+        try:
+            data = sock.recv(2)
+            char = data[0:1].decode()
+            is_pressed = bool(int(data[1:2].decode()))
+            #print(f"Code: {(char, is_pressed)}")
+            if not data:
+                return None, None
+            return char, is_pressed
+        except OSError:
+            return None, None
+        
+    def clear_queue(self):
+        try:
+            while True:
+                self.event_queue.get_nowait()
+        except Empty:
+            pass
+
+    def connect(self, signal) -> None:
+        self.signal = signal
+        self.clear_queue()
         if self.is_connected:
+            print(f"Is listener alive? {self.listener.is_alive()}")
+
+            return
             raise DeviceAlreadyConnectedError(
                 "Keyboard is already connected. Do not run `robot.connect()` twice."
             )
-
-        if PYNPUT_AVAILABLE:
+        if AS_TELEOP_SERVER:
+            self.listener = threading.Thread(target=self.run_server, daemon=True)
+            self.listener.start()
+        elif PYNPUT_AVAILABLE:
             logging.info("pynput is available - enabling local keyboard listener.")
             self.listener = keyboard.Listener(
                 on_press=self._on_press,
@@ -125,20 +219,31 @@ class KeyboardTeleop(Teleoperator):
             )
             self.listener.start()
             self.listener.wait()
-            print("Listener alive?", self.listener.is_alive())
+            print("Listener alive?", self.listener.is_alive()) 
         else:
-            logging.info("pynput not available - skipping local keyboard listener.")
+            logging.info("pynput nor teleop_server available - skipping local keyboard listener.")
             self.listener = None
+        self._is_connected = True
+
+    def send_message(self, msg):
+        try:
+            if AS_TELEOP_SERVER:
+                print(msg)
+                self.send_q.put(msg)
+            else:
+                print(f">>> {msg}")
+        except Exception as e:
+            print(f"Error in send_message: {e}")
 
     def calibrate(self) -> None:
         pass
 
     def _on_press(self, key):
+        print(f"{key} pressed!")
         if hasattr(key, "char") and key.char is not None:
             self.event_queue.put((key.char, True))
         else:
             self.event_queue.put((str(key), True))
-
 
     def _on_release(self, key):
         if hasattr(key, "char"):
@@ -241,6 +346,7 @@ class KeyboardJointTeleop(KeyboardTeleop):
         print(key, "pressed")
         if hasattr(key, "char"):
             key = key.char
+            
         self.event_queue.put((key, True))
 
     def _on_release(self, key):
@@ -270,38 +376,6 @@ class KeyboardJointTeleop(KeyboardTeleop):
 
         action_dict = {f"{joint}.pos": pos for joint, pos in self.joint_targets.items()}
         return action_dict
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
         
 from ...model.kinematics import RobotKinematics    
         
@@ -375,39 +449,36 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             "shape": (len(self.arm),),
             "names": {"motors": list(self.arm.motors)}, #
         }
-
-    def _on_press(self, key):
-        if hasattr(key, "char"):
-            key = key.char
-        self.event_queue.put((key, True))
-
-    def _on_release(self, key):
-        if hasattr(key, "char"):
-            key = key.char
-        self.event_queue.put((key, False))
-
     def reset(self, ee_pos):
         init_fk = ee_pos[:3, 3]
         print("3D pose:", init_fk)
         self.target_pos = {
             "x": init_fk[0],
-            "y": init_fk[0],
-            "z": init_fk[0],
+            "y": init_fk[1],
+            "z": init_fk[2],
             "roll": 0.0,
             "pitch": 90.0,
             "gripper": 0.0,
         }
-        
+
+    def rot_y(self, a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[ c, 0, s],
+                        [ 0, 1, 0],
+                        [-s, 0, c]])
+
+    def rot_z(self, a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c,-s, 0],
+                        [s, c, 0],
+                        [0, 0, 1]]),
+
     def get_action(self) -> dict[str, Any]:
         if not self.is_connected:
             raise DeviceNotConnectedError(
                 "KeyboardTeleop is not connected. You need to run `connect()` before `get_action()`."
             )
-
         self._drain_pressed_keys()
-        
-        
-
         # Generate action based on current key states
         for key, val in self.current_pressed.items():
             if not val:
@@ -424,6 +495,25 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
                 gripper, direction = self.key_gripper[key]
                 adjust = direction * self.gripper_factor
                 self.target_pos[gripper] += adjust
-
         return self.target_pos
+
+    def _on_press(self, key):
+        if hasattr(key, "char"):
+            key = key.char
+            if key == 'y':
+                self.signal["DECISION"] = "y"
+            elif key == 'n':
+                self.signal["DECISION"] = "n"
+        self.event_queue.put((key, True))
+
+    def _on_release(self, key):
+        if hasattr(key, "char"):
+            key = key.char
+        self.event_queue.put((key, False))
+
+    
+
+
+        
+    
 
