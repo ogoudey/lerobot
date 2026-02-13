@@ -164,7 +164,9 @@ class FeetechMotorsBus(MotorsBus):
             )
 
     def _handshake(self) -> None:
+        print("Asserting motors exist...")
         self._assert_motors_exist()
+        print("Asserting firmware...")
         self._assert_same_firmware()
 
     def _find_single_motor(self, motor: str, initial_baudrate: int | None = None) -> tuple[int, int]:

@@ -132,6 +132,7 @@ class VisionType(Enum):
     KINOVA_HRILAB = "kinova_hrilab"
     SO101_MULIP = "so101_mulip"
     SO101_EYE = "so101_eye"
+    NONE = "none"
 
 def sensory_factory_function(vision_type: VisionType) -> dict[str, Any]:
     print(f"Creating vision of type {vision_type}")
@@ -158,6 +159,8 @@ def sensory_factory_function(vision_type: VisionType) -> dict[str, Any]:
                 "onboard": USBCameraReader(eye),
             }
             return ra
+        case VisionType.NONE:
+            return {}
         case _:
             raise ValueError(f"Unsupported vision type: {vision_type}")
 
@@ -503,7 +506,7 @@ def factory_function(vla_complex_cfg) -> Runner:
             runner.ask_catch_on_end = False
         case "keyboard_demo":
             runner.robot, robot_config = create_body(SO101Follower)
-            runner.camera_assignments = sensory_factory_function(VisionType.SO101_EYE)
+            runner.camera_assignments = sensory_factory_function(VisionType.NONE)
             runner.teleop_cfg = create_teleop(robot_config, KeyboardEndEffectorTeleopConfig)
             runner.demoed = True
             runner.calculate_ik = True # redundant

@@ -407,7 +407,7 @@ class MotorsBus(abc.ABC):
             error_lines.append(pformat(expected_models, indent=4, sort_dicts=False))
             error_lines.append("\nFull found motor list (id: model_number):")
             error_lines.append(pformat(found_models, indent=4, sort_dicts=False))
-
+            print("\n".join(error_lines))
             raise RuntimeError("\n".join(error_lines))
 
     @abc.abstractmethod
@@ -434,12 +434,13 @@ class MotorsBus(abc.ABC):
             raise DeviceAlreadyConnectedError(
                 f"{self.__class__.__name__}('{self.port}') is already connected. Do not call `{self.__class__.__name__}.connect()` twice."
             )
-        #print(f"MotorsBus connecting")
+        print(f"MotorsBus connecting...")
         self._connect(handshake)
         self.set_timeout()
-        logger.debug(f"{self.__class__.__name__} connected.")
+        print(f"{self.__class__.__name__} connected.")
 
     def _connect(self, handshake: bool = True) -> None:
+        print("_connecting...")
         try:
             if not self.port_handler.openPort():
                 raise OSError(f"Failed to open port '{self.port}'.")
