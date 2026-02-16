@@ -506,7 +506,7 @@ def factory_function(vla_complex_cfg) -> Runner:
             runner.ask_catch_on_end = False
         case "keyboard_demo":
             runner.robot, robot_config = create_body(SO101Follower)
-            runner.camera_assignments = sensory_factory_function(VisionType.NONE)
+            runner.camera_assignments = sensory_factory_function(VisionType.SO101_EYE)
             runner.teleop_cfg = create_teleop(robot_config, KeyboardEndEffectorTeleopConfig)
             runner.demoed = True
             runner.calculate_ik = True # redundant
