@@ -328,9 +328,11 @@ class Runner:
                                     self.active_teleop.send_message(f"Not resetting position...")
                                 signal["DECISION"] = None
                             else:
-                                self.active_teleop.send_message(f"Resetting position...")
+                                if self.demoed:
+                                    self.active_teleop.send_message(f"Resetting position...")
                                 self.robot.reset_position()
-                                self.active_teleop.send_message(f"Position reset. Resetting signal...")
+                                if self.demoed:
+                                    self.active_teleop.send_message(f"Position reset. Resetting signal...")
                     except Exception as e:
                         print(f"Setup failed: {e}")
                     ctx = VideoEncodingManager(dataset) if self.dataset_making else nullcontext() # For cleanliness...
@@ -359,15 +361,18 @@ class Runner:
                                     self.active_teleop.reset(calculated_ee_pos)
                                     self.active_teleop.kinematics.robot.update_kinematics()
                             except Exception as e:
-                                self.active_teleop.send_message(f"Error in pre-episode decisions: {e}")
-                            self.active_teleop.send_message("Beginning episode loop...")
+                                print(f"Error in pre-episode decisions: {e}")
+                                if self.demoed:
+                                    self.active_teleop.send_message(f"Error in pre-episode decisions: {e}")
+                            if self.demoed:
+                                self.active_teleop.send_message("Beginning episode loop...")
                             while signal["RUNNING_E"]:
                                 interloop_log("Loop start.")
                                 loop_start = time.perf_counter()
                                 state = self.robot.get_joints_array() # Abstraction
-                                observation_frame = {"state": state}
+                                observation_frame = {"observation.state": state}
                                 for angle, reader in self.camera_assignments.items():
-                                    observation_frame[f"observation.images.{angle}"] = reader
+                                    observation_frame[f"observation.images.{angle}"] = reader.frame.copy()
                                 interloop_log("Got observation.")
 
                                 if self.demoed:
@@ -378,7 +383,7 @@ class Runner:
                                         signal["DECISION"] = None
                                         print(signal)
                                 else:
-                                    action = predict_action(
+                                    action_values = predict_action(
                                         observation_frame,
                                         self.policy,
                                         device=self.device,
@@ -386,6 +391,7 @@ class Runner:
                                         task=signal["task"],
                                         robot_type=self.robot.robot_type,
                                     )
+                                    action = {key: action_values[i].item() for i, key in enumerate(self.robot.action_features)} # turns action values into the dict that send_action expects (could bypass...)
                                 interloop_log("Got input action.")
                                 if self.calculate_ik:
                                     try:
@@ -454,15 +460,16 @@ class Runner:
                                         else:
                                             self.active_teleop.send_message(f"Not resetting position...")
                                         signal["DECISION"] = None
-                                    else:       
-
-                                        self.active_teleop.send_message(f"Resetting position...")
+                                    else:
+                                        if self.demoed:
+                                            self.active_teleop.send_message(f"Resetting position...")
                                         self.robot.reset_position() # Abstraction for robots, should maybe take an arg, or actually be another VLA
-                                        self.active_teleop.send_message(f"Position reset.")
+                                        if self.demoed:
+                                            self.active_teleop.send_message(f"Position reset.")
                             else:
                                 signal["RUNNING_LOOP"] = False
                         if self.ask_catch_on_end:
-                            if self.robot.is_connected:                    
+                            if self.robot.is_connected:         
                                 self.active_teleop.send_message("Drop? (Catch me!)")
                                 while signal["DECISION"] is None:
                                     time.sleep(0.1)
@@ -473,8 +480,9 @@ class Runner:
                                     self.robot.bus.disable_torque()
                                     self.robot.disconnect() 
                                 signal["DECISION"] = None
-                        if self.active_teleop:
+                        if self.active_teleop is not None:
                             self.active_teleop.send_message("No longer sending teleop...")                    
+                        print(f"Outside of running loop")
             except Exception as e:
                 print(f"Error in run loop {e}")
                 
@@ -518,7 +526,6 @@ def factory_function(vla_complex_cfg) -> Runner:
             runner.ask_to_loop = True
             
         case "auto":
-            print(f"LeRobot creating {vla_complex_cfg}...")
             match vla_complex_cfg.robot_type.value:
                 case "kinova":
                     pass
@@ -529,8 +536,11 @@ def factory_function(vla_complex_cfg) -> Runner:
                     #
                     #
                 case "so101":
+                    robot, robot_config = create_body(SO101Follower) # defaults to Kinova
+                    runner.robot = robot
                     runner.policy = SmolVLAPolicy.from_pretrained(vla_complex_cfg.policy_path)
-                    runner.camera_assignments = sensory_factory_function(VisionType.SO101_MULIP)
+                    runner.camera_assignments = sensory_factory_function(VisionType.SO101_EYE)
+                    runner.reset_position_on_begin = True
                     if torch.cuda.is_available():
                         print("Running CUDA")
                         runner.device = torch.device("cuda")

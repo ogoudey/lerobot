@@ -262,7 +262,7 @@ class SO101Follower(Robot):
 
     def get_joints_array(self):
         self.get_observation()
-        return np.array(list(self.present_pos.values()))
+        return np.array(list(self.present_pos.values()), dtype='float32')
         return np.array([self.present_pos[name] for name in teleop.joint_names])
 
     def reset_position(self,
