@@ -466,7 +466,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.episode_buffer = None
 
         self.root.mkdir(exist_ok=True, parents=True)
-
+        print(f"Root: {self.root}")
         # Load metadata
         self.meta = LeRobotDatasetMetadata(
             self.repo_id, self.root, self.revision, force_cache_sync=force_cache_sync
@@ -474,12 +474,14 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if self.episodes is not None and self.meta._version >= packaging.version.parse("v2.1"):
             episodes_stats = [self.meta.episodes_stats[ep_idx] for ep_idx in self.episodes]
             self.stats = aggregate_stats(episodes_stats)
+        print("Loaded metadata")
 
         # Load actual data
         try:
             if force_cache_sync:
                 raise FileNotFoundError
-            assert all((self.root / fpath).is_file() for fpath in self.get_episodes_file_paths())
+            for fpath in self.get_episodes_file_paths():
+                print(f"{self.root / fpath} is file {(self.root / fpath).is_file()}?")
             self.hf_dataset = self.load_hf_dataset()
         except (AssertionError, FileNotFoundError, NotADirectoryError):
             self.revision = get_safe_version(self.repo_id, self.revision)

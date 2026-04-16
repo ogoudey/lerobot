@@ -66,9 +66,11 @@ from lerobot.utils.control_utils import (
     init_keyboard_listener,
     is_headless,
     predict_action,
+    #remote_prediction,
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
 )
+
 from lerobot.utils.robot_utils import busy_wait
 from lerobot.utils.utils import init_logging, move_cursor_up
 from lerobot.utils.visualization_utils import _init_rerun, log_rerun_data
@@ -131,6 +133,7 @@ import utils
 class VisionType(Enum):
     KINOVA_HRILAB = "kinova_hrilab"
     SO101_MULIP = "so101_mulip"
+    SO101_AVA = "so101_ava"
     SO101_EYE = "so101_eye"
     NONE = "none"
 
@@ -151,6 +154,14 @@ def sensory_factory_function(vision_type: VisionType) -> dict[str, Any]:
             ra = {
                 "up": USBCameraReader(up),
                 "side": USBCameraReader(side),
+            }
+            return ra
+        case VisionType.SO101_AVA:
+            behind = USBCameraReader.get_cap(2)
+            onboard = USBCameraReader.get_cap(4)
+            ra = {
+                "behind": USBCameraReader(behind),
+                "onboard": USBCameraReader(onboard),
             }
             return ra
         case VisionType.SO101_EYE:
@@ -245,6 +256,8 @@ def create_teleop(robot_config: SO101FollowerConfig, cls: UnityEndEffectorTeleop
             raise Exception(f"Please provide a known Teleop class, not {cls}")
 
 
+
+
 # ======================================= #
 #  VLA* Factory <--> LeRobot Interactions #
 # ======================================= #
@@ -279,6 +292,7 @@ class Runner:
         self.camera_assignments = None
         self.project_camera = False # changed to a str later??!
         self.policy = None
+        self.policy_mode = "remote"
         self.device = None
 
         self.active_teleop = None
@@ -355,7 +369,7 @@ class Runner:
                             
                             try:
                                 if self.calculate_ik:
-                                    initial_joints_deg = np.array(self.robot.get_joints_array())    # convert to np_array for kinematics
+                                    initial_joints_deg = self.robot.get_joints_array()    # convert to np_array for kinematics
                                     position_weight, orientation_weight = 1.0, 0.1    
                                     calculated_ee_pos = self.active_teleop.kinematics.forward_kinematics(initial_joints_deg)
                                     self.active_teleop.reset(calculated_ee_pos)
@@ -383,6 +397,7 @@ class Runner:
                                         signal["DECISION"] = None
                                         print(signal)
                                 else:
+                                
                                     action_values = predict_action(
                                         observation_frame,
                                         self.policy,
@@ -514,7 +529,7 @@ def factory_function(vla_complex_cfg) -> Runner:
             runner.ask_catch_on_end = False
         case "keyboard_demo":
             runner.robot, robot_config = create_body(SO101Follower)
-            runner.camera_assignments = sensory_factory_function(VisionType.SO101_EYE)
+            runner.camera_assignments = sensory_factory_function(VisionType.SO101_AVA)
             runner.teleop_cfg = create_teleop(robot_config, KeyboardEndEffectorTeleopConfig)
             runner.demoed = True
             runner.calculate_ik = True # redundant
@@ -563,3 +578,12 @@ def factory_function(vla_complex_cfg) -> Runner:
         raise ValueError("Could not create Runner!")
     print(f"Runner created.")
     return runner
+
+if __name__ == "__main__":
+    print("VLA interface ran alone, starting server as server")
+    # create session
+    policy = SmolVLAPolicy.from_pretrained()
+    while True:
+        # handle client
+        batch, noise = accept_observation()
+        policy._get_action_chunk(batch, noise)

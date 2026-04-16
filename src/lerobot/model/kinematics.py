@@ -80,7 +80,7 @@ class RobotKinematics:
 
         # Update joint positions in Placo robot
         for i, joint_name in enumerate(self.joint_names):
-            self.robot.set_joint(joint_name, joint_pos_rad[i])
+            self.robot.set_joint(joint_name, float(joint_pos_rad[i]))
             if verbose:
                 print(f"Set joint {joint_name} to {joint_pos_rad[i]:.6f} rad")
 
@@ -130,7 +130,7 @@ class RobotKinematics:
 
         # Set current joint positions as initial guess
         for i, joint_name in enumerate(self.joint_names):
-            self.robot.set_joint(joint_name, current_joint_rad[i])
+            self.robot.set_joint(joint_name, float(current_joint_rad[i]))
             if verbose:
                 print(f"Initial guess joint {joint_name} set to {current_joint_rad[i]:.6f} rad")
 

@@ -33,6 +33,14 @@ from lerobot.configs.train import TrainPipelineConfig
 from lerobot.policies.utils import log_model_loading_keys
 from lerobot.utils.hub import HubMixin
 
+from enum import Enum
+class InferenceType(Enum):
+    SELF = "self"
+    CLIENT = "client"
+    SERVER = "server"
+
+INFERENCE_MODE = InferenceType(os.environ.get("SMOLVLA_INFERENCE_TYPE", "self").lower())
+
 T = TypeVar("T", bound="PreTrainedPolicy")
 
 
@@ -86,6 +94,19 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
         The policy is set in evaluation mode by default using `policy.eval()` (dropout modules are
         deactivated). To train it, you should first set it back in training mode with `policy.train()`.
         """
+        if INFERENCE_MODE == InferenceType.CLIENT:
+            config = PreTrainedConfig.from_pretrained(
+                pretrained_name_or_path=pretrained_name_or_path,
+                force_download=force_download,
+                resume_download=resume_download,
+                proxies=proxies,
+                token=token,
+                cache_dir=cache_dir,
+                local_files_only=local_files_only,
+                revision=revision,
+                **kwargs,
+            )
+            return cls(config)
         if config is None:
             config = PreTrainedConfig.from_pretrained(
                 pretrained_name_or_path=pretrained_name_or_path,

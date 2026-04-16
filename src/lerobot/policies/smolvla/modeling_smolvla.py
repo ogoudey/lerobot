@@ -52,6 +52,9 @@ policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base")
 
 """
 
+
+
+
 import math
 import os
 import re
@@ -68,13 +71,15 @@ from lerobot.policies.normalize import (
     Normalize,
     Unnormalize,
 )
-from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.policies.pretrained import PreTrainedPolicy, INFERENCE_MODE, InferenceType
 from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
 from lerobot.policies.smolvla.smolvlm_with_expert import SmolVLMWithExpertModel
 from lerobot.policies.utils import (
     populate_queues,
 )
 from lerobot.utils.utils import get_safe_dtype
+
+
 
 # Matches ".soNNN", optionally followed by "-something", up to the "_buffer_" marker
 _VARIANT_RE = re.compile(r"\.so\d+(?:-[\w]+)?_buffer_")
@@ -337,8 +342,11 @@ class SmolVLAPolicy(PreTrainedPolicy):
             dataset_stats: Dataset statistics to be used for normalization. If not passed here, it is expected
                 that they will be passed with a call to `load_state_dict` before the policy is used.
         """
-
+        
         super().__init__(config)
+        if INFERENCE_MODE == InferenceType.Client:
+            # start up client
+            return
         config.validate_features()
         self.config = config
         self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
@@ -382,6 +390,13 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
     def get_optim_params(self) -> dict:
         return self.parameters()
+
+    def _get_remote_action_chunk(self, batch, noise):
+        ## BLOCKING
+        # make request of (batch, noise) to server
+        ## WAIT
+        # return chunk of 50 actions
+        pass
 
     
     def _get_action_chunk(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
@@ -448,7 +463,13 @@ class SmolVLAPolicy(PreTrainedPolicy):
         if len(self._queues[ACTION]) == 0:
             print("Getting", self.config.n_action_steps, "new actions...")
             
-            actions = self._get_action_chunk(batch, noise)
+            if INFERENCE_MODE == InferenceType.CLIENT:
+                actions = self._get_remote_action_chunk(batch, noise)
+            elif INFERENCE_MODE == InferenceType.SERVER:
+                actions = self._get_action_chunk(batch, noise)
+            else:
+                actions = self._get_action_chunk(batch, noise)
+    
 
             # `self.predict_action_chunk` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
             # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
