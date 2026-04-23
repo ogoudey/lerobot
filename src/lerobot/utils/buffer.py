@@ -36,6 +36,9 @@ class BatchTransition(TypedDict):
     truncated: torch.Tensor
     complementary_info: dict[str, torch.Tensor | float | int] | None = None
 
+robot = 1
+
+robot.is_happy()
 
 def random_crop_vectorized(images: torch.Tensor, output_size: tuple) -> torch.Tensor:
     """

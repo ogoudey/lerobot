@@ -344,7 +344,7 @@ class SmolVLAPolicy(PreTrainedPolicy):
         """
         
         super().__init__(config)
-        if INFERENCE_MODE == InferenceType.Client:
+        if INFERENCE_MODE == InferenceType.CLIENT:
             # start up client
             return
         config.validate_features()

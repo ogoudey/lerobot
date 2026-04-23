@@ -124,6 +124,7 @@ from camera_readers import WebcamReader, USBCameraReader
 
 logger = logging.getLogger(__name__)
 
+import client_utilities
 import utils
 
 # ======================================= #
@@ -292,7 +293,7 @@ class Runner:
         self.camera_assignments = None
         self.project_camera = False # changed to a str later??!
         self.policy = None
-        self.policy_mode = "remote"
+        self.policy_mode = "client"
         self.device = None
 
         self.active_teleop = None
@@ -397,15 +398,17 @@ class Runner:
                                         signal["DECISION"] = None
                                         print(signal)
                                 else:
-                                
-                                    action_values = predict_action(
-                                        observation_frame,
-                                        self.policy,
-                                        device=self.device,
-                                        use_amp=(self.device.type == "cuda"),
-                                        task=signal["task"],
-                                        robot_type=self.robot.robot_type,
-                                    )
+                                    if self.policy_mode == "client":
+                                        action_values = client_utilities.request_and_wait(observation_frame, signal["task"]) # to implement
+                                    else:
+                                        action_values = predict_action(
+                                            observation_frame,
+                                            self.policy,
+                                            device=self.device,
+                                            use_amp=(self.device.type == "cuda"),
+                                            task=signal["task"],
+                                            robot_type=self.robot.robot_type,
+                                        )
                                     action = {key: action_values[i].item() for i, key in enumerate(self.robot.action_features)} # turns action values into the dict that send_action expects (could bypass...)
                                 interloop_log("Got input action.")
                                 if self.calculate_ik:
@@ -547,14 +550,13 @@ def factory_function(vla_complex_cfg) -> Runner:
                     # not sure how to instantiate a VLA for Kinova
                     #   It could have all the functions that are below for so101
                     # 
-                    #
-                    #
-                    #
                 case "so101":
                     robot, robot_config = create_body(SO101Follower) # defaults to Kinova
                     runner.robot = robot
+                    print(f"Creating policy from pretrained at path {vla_complex_cfg.policy_path}")
                     runner.policy = SmolVLAPolicy.from_pretrained(vla_complex_cfg.policy_path)
-                    runner.camera_assignments = sensory_factory_function(VisionType.SO101_EYE)
+                    print(f"Setting camera assigments...")
+                    runner.camera_assignments = sensory_factory_function(VisionType.SO101_AVA)
                     runner.reset_position_on_begin = True
                     if torch.cuda.is_available():
                         print("Running CUDA")
@@ -579,11 +581,4 @@ def factory_function(vla_complex_cfg) -> Runner:
     print(f"Runner created.")
     return runner
 
-if __name__ == "__main__":
-    print("VLA interface ran alone, starting server as server")
-    # create session
-    policy = SmolVLAPolicy.from_pretrained()
-    while True:
-        # handle client
-        batch, noise = accept_observation()
-        policy._get_action_chunk(batch, noise)
+

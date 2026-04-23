@@ -94,6 +94,7 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
         The policy is set in evaluation mode by default using `policy.eval()` (dropout modules are
         deactivated). To train it, you should first set it back in training mode with `policy.train()`.
         """
+        print(f"Inference mode: {INFERENCE_MODE}")
         if INFERENCE_MODE == InferenceType.CLIENT:
             config = PreTrainedConfig.from_pretrained(
                 pretrained_name_or_path=pretrained_name_or_path,
@@ -119,13 +120,17 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
                 revision=revision,
                 **kwargs,
             )
+        print("Creating modelid and instance")
         model_id = str(pretrained_name_or_path)
+        print(model_id)
         instance = cls(config, **kwargs)
+        print(instance)
         if os.path.isdir(model_id):
             print("Loading weights from local directory")
             model_file = os.path.join(model_id, SAFETENSORS_SINGLE_FILE)
             policy = cls._load_as_safetensor(instance, model_file, config.device, strict)
         else:
+            print("Could not find model weights...")
             try:
                 model_file = hf_hub_download(
                     repo_id=model_id,
@@ -143,7 +148,7 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
                 raise FileNotFoundError(
                     f"{SAFETENSORS_SINGLE_FILE} not found on the HuggingFace Hub in {model_id}"
                 ) from e
-
+        print("Found policy")
         policy.to(config.device)
         policy.eval()
         return policy
